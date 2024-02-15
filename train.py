@@ -21,15 +21,23 @@ import numpy as np
 from collections import OrderedDict
 from PIL import Image
 from copy import deepcopy
+from easydict import EasyDict as edict
 from glob import glob
+from ruamel.yaml import YAML
 from time import time
 import argparse
 import logging
 import os
+import cv2
 
-from models import DiT_models
+from models import DiT_models, DiT
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
+from utils.tree_to_img import tree_to_img_mnist
+
+
+# Dataset
+import data.permutedDataset as permutedDataset
 
 
 #################################################################################
@@ -113,6 +121,11 @@ def main(args):
     """
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
+    # Load config
+    with open(args.config_file, "r") as f:
+        yaml = YAML()
+        config = edict(yaml.load(f))
+
     # Setup DDP:
     dist.init_process_group("nccl")
     assert args.global_batch_size % dist.get_world_size() == 0, f"Batch size must be divisible by world size."
@@ -133,35 +146,48 @@ def main(args):
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger = create_logger(experiment_dir)
         logger.info(f"Experiment directory created at {experiment_dir}")
+        sample_dir = os.path.join(args.results_dir, "samples")
+        os.makedirs(sample_dir, exist_ok=True)
     else:
         logger = create_logger(None)
 
     # Create model:
-    assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
-    latent_size = args.image_size // 8
-    model = DiT_models[args.model](
-        input_size=latent_size,
-        num_classes=args.num_classes
+    model = DiT(
+        # Data related
+        in_channels=config.data.in_channels,
+        num_classes=config.data.num_classes,
+        condition_node_num=config.data.condition_node_num,
+        condition_node_dim=config.data.condition_node_dim,
+        # Network itself related
+        hidden_size=config.model.hidden_size,
+        mlp_ratio=config.model.mlp_ratio,
+        depth=config.model.depth,
+        num_heads=config.model.num_heads
     )
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
     model = DDP(model.to(device), device_ids=[rank])
-    diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
-    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
+    diffusion = create_diffusion(timestep_respacing="",
+                                 *config.diffusion)
+
+    #vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
     logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
 
     # Setup data:
-    transform = transforms.Compose([
-        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
-    ])
-    dataset = ImageFolder(args.data_path, transform=transform)
+    #transform = transforms.Compose([
+    #    transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
+    #    transforms.RandomHorizontalFlip(),
+    #    transforms.ToTensor(),
+    #    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
+    #])
+    #dataset = ImageFolder(args.data_path, transform=transform)
+    dataset_class = getattr(permutedDataset, config.dataset)
+    dataset = dataset_class(*config.data)
+
     sampler = DistributedSampler(
         dataset,
         num_replicas=dist.get_world_size(),
@@ -195,14 +221,12 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x, y in loader:
+        for x0, x, y in loader:
             x = x.to(device)
+            x0 = x0.to(device) # x0 is the nodes from previous level
             y = y.to(device)
-            with torch.no_grad():
-                # Map input images to latent space + normalize latents:
-                x = vae.encode(x).latent_dist.sample().mul_(0.18215)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-            model_kwargs = dict(y=y)
+            model_kwargs = dict(y=y, x0=x0)
             loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
@@ -243,6 +267,28 @@ def main(args):
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
                 dist.barrier()
 
+            # Sample images
+            if train_steps % args.sample_every == 0 and train_steps > 0:
+                if rank == 0:
+                    z = torch.randn_like(x).to(device)
+                    model_kwargs = dict(y=y, x0=x0)
+                    samples = diffusion.p_sample_loop(ema.forward,
+                                                      z.shape,
+                                                      z,
+                                                      model_kwargs=model_kwargs,
+                                                      progress=False,
+                                                      device=device)
+                    data0 = ((x0 + 1.0) / 2.0).detach().cpu().numpy()
+                    data0 = np.clip(data0, 0.0, 1.0)
+                    data1 = ((samples + 1.0) / 2.0).detach().cpu().numpy()
+                    data1 = np.clip(data1, 0.0, 1.0)
+                    for i in range(4): # Sample up to 4 images
+                        img0, img1 = tree_to_img_mnist(data0[i], data1[i])
+                        cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_0.png", img0)
+                        cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_1.png", img1)
+
+                dist.barrier()
+
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
 
@@ -256,14 +302,17 @@ if __name__ == "__main__":
     parser.add_argument("--data-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
-    parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--epochs", type=int, default=1400)
     parser.add_argument("--global-batch-size", type=int, default=256)
     parser.add_argument("--global-seed", type=int, default=0)
-    parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
+    parser.add_argument("--sample_every", type=int, default=10000)
+
+    # Newly added argument
+    parser.add_argument("--config_file", type=str, required=True)
+
     args = parser.parse_args()
     main(args)

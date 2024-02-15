@@ -11,3 +11,6 @@ dependencies:
     - timm
     - diffusers
     - accelerate
+    - opencv-python-headless
+    - ruamel.yaml
+    - easydict
