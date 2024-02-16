@@ -40,7 +40,7 @@ class MNISTPermutedDataset(Dataset):
 
         # Change the parent indices because of the permutation
         for i in range(64):
-            if level1_new[i][0] != 0:
+            if level1_new[i][2] != 0:
                 ori_pIdx = int(level1_new[i][0] * 16.0)
                 before_permute_idx = np.where(node0_indices == ori_pIdx)[0]
                 after_permute_idx = np.where(permuted_indices0 == before_permute_idx)[0]
