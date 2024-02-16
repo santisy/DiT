@@ -283,8 +283,9 @@ class GaussianDiffusion:
             extra = None
 
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
-            assert model_output.shape == (B, C * 2, *x.shape[2:])
-            model_output, model_var_values = th.split(model_output, C, dim=1)
+            B, L, C = x.shape
+            assert model_output.shape == (B, L, C * 2)
+            model_output, model_var_values = th.split(model_output, C, dim=2)
             min_log = _extract_into_tensor(self.posterior_log_variance_clipped, t, x.shape)
             max_log = _extract_into_tensor(np.log(self.betas), t, x.shape)
             # The model_var_values is [-1, 1] for [min_var, max_var].
@@ -755,7 +756,7 @@ class GaussianDiffusion:
                 model_output, model_var_values = th.split(model_output, C, dim=2)
                 # Learn the variance using the variational bound, but don't let
                 # it affect our mean prediction.
-                frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
+                frozen_out = th.cat([model_output.detach(), model_var_values], dim=2)
                 terms["vb"] = self._vb_terms_bpd(
                     model=lambda *args, r=frozen_out: r,
                     x_start=x_start,

@@ -307,7 +307,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
-    parser.add_argument("--sample_every", type=int, default=10000)
+    parser.add_argument("--sample-every", type=int, default=10000)
 
     # Newly added argument
     parser.add_argument("--config-file", type=str, required=True)
