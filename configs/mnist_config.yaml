@@ -1,7 +1,7 @@
 # TODO: Enlarge the model size when formally running
 model:
-    hidden_size: 256
-    depth: 11
+    hidden_size: 384
+    depth: 12
     mlp_ratio: 4.0
     cross_layers: [2, 4, 6, 8]
     num_heads: 8

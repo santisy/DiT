@@ -35,6 +35,7 @@ from models import DiT_models, DiT
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 from utils.tree_to_img import tree_to_img_mnist
+from torch.optim.lr_scheduler import StepLR
 
 
 # Dataset
@@ -177,6 +178,7 @@ def main(args):
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    scheduler = StepLR(opt, step_size=1, gamma=0.995)
 
     # Setup data:
     #transform = transforms.Compose([
@@ -290,6 +292,8 @@ def main(args):
                         cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_1.png", img1)
 
                 dist.barrier()
+
+        scheduler.step()
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
