@@ -135,13 +135,13 @@ class CrossAttention(nn.Module):
     def __init__(self, hidden_size, num_heads):
         super().__init__()
         self.multihead_attention = nn.MultiheadAttention(embed_dim=hidden_size,
-                                                         num_heads=num_heads)
+                                                         num_heads=num_heads,
+                                                         batch_first=True)
 
     def forward(self, x, c):
-        q = x.permute(1, 0, 2)
-        k = v = c.permute(1, 0, 2)
+        q = x
+        k = v = c
         attn_out, _ = self.multihead_attention(q, k, v)
-        attn_out = attn_out.permute(1, 0, 2)
 
         return attn_out
 
@@ -333,7 +333,7 @@ class DiT(nn.Module):
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
 
 
-    def forward(self, x, t, y, x_0):
+    def forward(self, x, t, y, x0):
         """
         Forward pass of DiT.
         x: (N, L, C) tensor of spatial inputs (images or latent representations of images)
@@ -344,7 +344,7 @@ class DiT(nn.Module):
         #x = self.x_embedder(x) + self.pos_embed  # (N, L, D), where T = H * W / patch_size ** 2
 
         # Embed conditions and timesteps
-        x_0 = self.n_embedder(x_0)               # Previous node embedding
+        x0 = self.n_embedder(x0)               # Previous node embedding
         t = self.t_embedder(t)                   # (N, D)
         if self.y_embedder is not None:
             y = self.y_embedder(y, self.training)    # (N, D)
@@ -354,7 +354,7 @@ class DiT(nn.Module):
 
         x = self.input_layer(x, c)
         for block in self.blocks:
-            x = block(x, c, x_0)                      # (N, L, D)
+            x = block(x, c, x0)                      # (N, L, D)
         x = self.output_layer(x, c)
         return x
 

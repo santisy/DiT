@@ -1,3 +1,4 @@
+# TODO: Enlarge the model size when formally running
 model:
     hidden_size: 128
     depth: 6

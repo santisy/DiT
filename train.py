@@ -29,6 +29,7 @@ import argparse
 import logging
 import os
 import cv2
+import shutil
 
 from models import DiT_models, DiT
 from diffusion import create_diffusion
@@ -139,15 +140,15 @@ def main(args):
     # Setup an experiment folder:
     if rank == 0:
         os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
-        experiment_index = len(glob(f"{args.results_dir}/*"))
-        model_string_name = args.model.replace("/", "-")  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
-        experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
+        experiment_dir = f"{args.results_dir}/{args.exp_id}"  # Create an experiment folder
         checkpoint_dir = f"{experiment_dir}/checkpoints"  # Stores saved model checkpoints
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger = create_logger(experiment_dir)
         logger.info(f"Experiment directory created at {experiment_dir}")
-        sample_dir = os.path.join(args.results_dir, "samples")
+        sample_dir = os.path.join(experiment_dir, "samples")
         os.makedirs(sample_dir, exist_ok=True)
+        # Backup the yaml config file
+        shutil.copy(args.config_file, experiment_dir)
     else:
         logger = create_logger(None)
 
@@ -169,7 +170,7 @@ def main(args):
     requires_grad(ema, False)
     model = DDP(model.to(device), device_ids=[rank])
     diffusion = create_diffusion(timestep_respacing="",
-                                 *config.diffusion)
+                                 **config.diffusion)
 
     #vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
     logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -204,7 +205,7 @@ def main(args):
         pin_memory=True,
         drop_last=True
     )
-    logger.info(f"Dataset contains {len(dataset):,} images ({args.data_path})")
+    logger.info(f"Dataset contains {len(dataset):}")
 
     # Prepare models for training:
     update_ema(ema, model.module, decay=0)  # Ensure EMA is initialized with synced weights
@@ -299,10 +300,7 @@ def main(args):
 if __name__ == "__main__":
     # Default args here will train DiT-XL/2 with the hyperparameters we used in our paper (except training iters).
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-path", type=str, required=True)
-    parser.add_argument("--results-dir", type=str, default="results")
-    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
-    parser.add_argument("--num-classes", type=int, default=1000)
+    parser.add_argument("--results-dir", type=str, default="training_runs")
     parser.add_argument("--epochs", type=int, default=1400)
     parser.add_argument("--global-batch-size", type=int, default=256)
     parser.add_argument("--global-seed", type=int, default=0)
@@ -312,7 +310,8 @@ if __name__ == "__main__":
     parser.add_argument("--sample_every", type=int, default=10000)
 
     # Newly added argument
-    parser.add_argument("--config_file", type=str, required=True)
+    parser.add_argument("--config-file", type=str, required=True)
+    parser.add_argument("--exp-id", type=str, required=True)
 
     args = parser.parse_args()
     main(args)
