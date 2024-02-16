@@ -4,8 +4,8 @@ def tree_to_img_mnist(data0: np.ndarray, data1: np.ndarray):
     """
         Input:
             (parIdx, curIdx, value)
-            data0: [16, 3], the first level node information
-            data1: [64, 3], the second level node information
+            data0: [16 * 3,], the first level node information
+            data1: [64 * 3,], the second level node information
         Output:
             img0: First level image
             img1: Second level image
@@ -17,14 +17,19 @@ def tree_to_img_mnist(data0: np.ndarray, data1: np.ndarray):
     for j in range(16):
         if data0[j * 3 + 2] > 0:
             curIdx = int(data0[j * 3 + 1] * 16)
+            curIdx = np.clip(curIdx, 0, 15)
             x = curIdx % 4
             y = curIdx // 4
             img0[y, x] = data0[j * 3 + 2]
     
     for j in range(64):
         if data1[j * 3 + 2] > 0:
-            parIdx = int(data0[int(data1[j * 3] * 16) * 3 + 1] * 16)
+            posIdx = int(data1[j * 3] * 16)
+            posIdx = np.clip(posIdx, 0, 15)
+            parIdx = int(data0[posIdx * 3 + 1] * 16)
+            parIdx = np.clip(parIdx, 0, 15)
             curIdx = int(data1[j * 3 + 1] * 4)
+            curIdx = np.clip(curIdx, 0, 3)
             x_j = parIdx % 4
             y_j = parIdx // 4
             x_k = curIdx % 2

@@ -284,7 +284,8 @@ def main(args):
                     data1 = ((samples + 1.0) / 2.0).detach().cpu().numpy()
                     data1 = np.clip(data1, 0.0, 1.0)
                     for i in range(4): # Sample up to 4 images
-                        img0, img1 = tree_to_img_mnist(data0[i], data1[i])
+                        img0, img1 = tree_to_img_mnist(data0[i].flatten(),
+                                                       data1[i].flatten())
                         cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_0.png", img0)
                         cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_1.png", img1)
 
