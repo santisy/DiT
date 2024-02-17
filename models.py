@@ -31,7 +31,6 @@ class PreviousNodeEmbedder(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size + node_dim, hidden_size, bias=True),
             nn.SiLU(),
-            nn.Linear(hidden_size, hidden_size, bias=True),
         )
 
         # Pre-compute the positional embedding
@@ -134,13 +133,19 @@ class CrossAttention(nn.Module):
     """
     def __init__(self, hidden_size, num_heads):
         super().__init__()
+        self.proj_q = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.proj_k = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.proj_v = nn.Linear(hidden_size, hidden_size, bias=False)
+
         self.multihead_attention = nn.MultiheadAttention(embed_dim=hidden_size,
                                                          num_heads=num_heads,
                                                          batch_first=True)
 
     def forward(self, x, c):
-        q = x
-        k = v = c
+        q = self.proj_q(x)
+        k = self.proj_k(c)
+        v = self.proj_k(c)
+
         attn_out, _ = self.multihead_attention(q, k, v)
 
         return attn_out
@@ -308,10 +313,13 @@ class DiT(nn.Module):
         #nn.init.constant_(self.x_embedder.proj.bias, 0)
 
         # Initialize input and output layer
+        # Input
         nn.init.normal_(self.input_layer.linear.weight, std=0.02)
         nn.init.constant_(self.input_layer.adaLN_modulation[-1].weight, 0) 
         nn.init.constant_(self.input_layer.adaLN_modulation[-1].bias, 0) 
-        nn.init.normal_(self.output_layer.linear.weight, std=0.02)
+        # Output
+        nn.init.constant_(self.output_layer.linear.weight, 0.0)
+        nn.init.constant_(self.output_layer.linear.bias, 0.0)
         nn.init.constant_(self.output_layer.adaLN_modulation[-1].weight, 0) 
         nn.init.constant_(self.output_layer.adaLN_modulation[-1].bias, 0) 
 
@@ -325,7 +333,6 @@ class DiT(nn.Module):
 
         # IntiaLize node embedder
         nn.init.normal_(self.n_embedder.mlp[0].weight, std=0.02)
-        nn.init.normal_(self.n_embedder.mlp[2].weight, std=0.02)
 
         # Zero-out adaLN modulation layers in DiT blocks:
         for block in self.blocks:
