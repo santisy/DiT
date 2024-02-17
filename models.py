@@ -48,8 +48,8 @@ class PreviousNodeEmbedder(nn.Module):
 
     def forward(self, nodes: torch.Tensor):
         batch_size = nodes.size(0)
-        nodes = torch.cat([self.pos_embeddings.unsqueeze(0).repeat(batch_size, 1, 1)],
-                           nodes,
+        nodes = torch.cat([self.pos_embeddings.unsqueeze(0).repeat(batch_size, 1, 1),
+                           nodes],
                            dim=-1)
         embedded = self.mlp(nodes)
         return embedded
