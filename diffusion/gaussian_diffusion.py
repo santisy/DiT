@@ -94,6 +94,22 @@ def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_time
     assert betas.shape == (num_diffusion_timesteps,)
     return betas
 
+def log(t, eps: float = 1e-12):
+    return th.log(t.clamp(min = eps))
+
+@th.jit.script
+def alpha_cosine_log_snr(t, s: float = 0.008):
+    return -log((th.cos((t + s) / (1 + s) * math.pi * 0.5) ** -2) - 1, eps = 1e-5) # not sure if this accounts for beta being clipped to 0.999 in discrete version
+
+def log_snr_to_alpha_sigma(logsnr):
+    return th.sqrt(th.sigmoid(logsnr)), th.sqrt(th.sigmoid(-logsnr))
+
+def log_snr_to_beta(logsnr):
+    alphas_cumprod, _ = log_snr_to_alpha_sigma(logsnr)
+    alphas_cumprod = alphas_cumprod.pow_(2.0)
+    alphas_cumprod = th.clip(alphas_cumprod, 1e-6, 0.9999)
+    alphas = alphas_cumprod[1:] / alphas_cumprod[:-1]
+    return 1 - alphas
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
@@ -118,6 +134,31 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
             num_diffusion_timesteps,
             lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
         )
+    elif schedule_name == "chen_linear":
+        t = th.linspace(0, 1, num_diffusion_timesteps + 1, dtype=th.float32)
+        alphas_cumprod = 1 - t
+        alphas_cumprod = th.clip(alphas_cumprod, 1e-6, 0.9999)
+        alphas = alphas_cumprod[1:] / alphas_cumprod[:-1]
+        return 1 - alphas
+
+    elif schedule_name == "cosine":
+        t = th.linspace(0, 1, num_diffusion_timesteps + 1, dtype=th.float32)
+        logsnr = alpha_cosine_log_snr(t)
+        betas = log_snr_to_beta(logsnr)
+        return betas
+    elif schedule_name == "cosine_variant_v2":
+        t = th.linspace(0, 1, num_diffusion_timesteps + 1, dtype=th.float32)
+        s = 0.2
+        e = 1.0
+        tau = 1.5
+        v_start = math.cos(s * math.pi / 2.0) ** (2 * tau)
+        v_end = math.cos(e * math.pi / 2.0) ** (2 * tau)
+        output = th.cos((t * (e - s) + s) * math.pi / 2) ** (2 * tau)
+        output = (v_end - output) / (v_end - v_start)
+        output = th.clip(output, 1e-9, 9.999e-1)
+        logsnr = th.log(output / (1 - output))
+        betas = log_snr_to_beta(logsnr)
+        return betas
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
