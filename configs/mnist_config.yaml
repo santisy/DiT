@@ -3,7 +3,7 @@ model:
     hidden_size: 384
     depth: 12
     mlp_ratio: 4.0
-    cross_layers: [2, 4, 6, 8]
+    cross_layers: [2, 4, 6, 8, 10]
     num_heads: 8
 
 dataset: MNISTPermutedDataset

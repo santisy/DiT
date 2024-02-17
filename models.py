@@ -144,7 +144,7 @@ class CrossAttention(nn.Module):
     def forward(self, x, c):
         q = self.proj_q(x)
         k = self.proj_k(c)
-        v = self.proj_k(c)
+        v = self.proj_v(c)
 
         attn_out, _ = self.multihead_attention(q, k, v)
 
