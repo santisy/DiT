@@ -178,7 +178,8 @@ def main(args):
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
-    scheduler = StepLR(opt, step_size=1, gamma=0.999)
+    if not args.no_lr_decay:
+        scheduler = StepLR(opt, step_size=1, gamma=0.999)
 
     # Setup data:
     #transform = transforms.Compose([
@@ -251,7 +252,8 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
-                log_info += f", Learning Rate: {scheduler.get_lr()}"
+                if not args.no_lr_decay:
+                    log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
@@ -281,6 +283,7 @@ def main(args):
                                                       z.shape,
                                                       z,
                                                       model_kwargs=model_kwargs,
+                                                      clip_denoised=False,
                                                       progress=False,
                                                       device=device)
                     data0 = ((x0 + 1.0) / 2.0).detach().cpu().numpy()
@@ -295,7 +298,8 @@ def main(args):
 
                 dist.barrier()
 
-        scheduler.step()
+        if not args.no_lr_decay:
+            scheduler.step()
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
@@ -315,6 +319,7 @@ if __name__ == "__main__":
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
     parser.add_argument("--sample-every", type=int, default=10000)
+    parser.add_argument("--no-lr-decay", action="store_true")
 
     # Newly added argument
     parser.add_argument("--config-file", type=str, required=True)
