@@ -30,7 +30,10 @@ class PreviousNodeEmbedder(nn.Module):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size + node_dim, hidden_size, bias=True),
+            nn.LayerNorm(hidden_size, elementwise_affine=True, eps=1e-6),
             nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size, bias=True),
+            nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6),
         )
 
         # Pre-compute the positional embedding
@@ -160,7 +163,7 @@ class DiTBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, 
                  cross_attention=False, **block_kwargs):
         super().__init__()
-        self.cross_attnetion = cross_attention
+        self.cross_attention = cross_attention
 
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
@@ -172,24 +175,22 @@ class DiTBlock(nn.Module):
         if cross_attention:
             self.cross = CrossAttention(hidden_size, num_heads)
             self.norm0 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-            self.adaLN_modulation = nn.Sequential(
-                nn.SiLU(),
-                nn.Linear(hidden_size, 9 * hidden_size, bias=True)
-            )
-        else:
-            self.adaLN_modulation = nn.Sequential(
-                nn.SiLU(),
-                nn.Linear(hidden_size, 6 * hidden_size, bias=True)
-            )
+            self.adaLN_modulation_mca = nn.Sequential(nn.SiLU(),
+                                                      nn.Linear(hidden_size, 5 * hidden_size, bias=True))
+
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
+        )
 
 
     def forward(self, x, c, x0):
-        if not self.cross_attnetion:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
-        else:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp, shift_mca, scale_mca, gate_mca = self.adaLN_modulation(c).chunk(9, dim=1)
-            x = x + gate_mca.unsqueeze(1) * self.cross(modulate(self.norm0(x), shift_mca, scale_mca), x0)
+        if self.cross_attention:
+            gate_mca, shift_mca, scale_mca, shift_mca0, scale_mca0 =self.adaLN_modulation_mca(c).chunk(5, dim=1)
+            x = x + gate_mca.unsqueeze(1) * self.cross(modulate(self.norm0(x), shift_mca, scale_mca),
+                                                       modulate(x0, shift_mca0, scale_mca0))
 
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
         x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
         return x
@@ -265,7 +266,7 @@ class DiT(nn.Module):
         self.num_heads = num_heads
 
         # Input layer
-        self.input_layer = InputLayer(hidden_size, in_channels)
+        self.input_layer = nn.Linear(in_channels, hidden_size)
 
         self.n_embedder = PreviousNodeEmbedder(condition_node_num,
                                                condition_node_dim,
@@ -315,10 +316,10 @@ class DiT(nn.Module):
         #nn.init.constant_(self.x_embedder.proj.bias, 0)
 
         # Initialize input and output layer
-        # Input
-        nn.init.normal_(self.input_layer.linear.weight, std=0.02)
-        nn.init.constant_(self.input_layer.adaLN_modulation[-1].weight, 0) 
-        nn.init.constant_(self.input_layer.adaLN_modulation[-1].bias, 0) 
+        # # Input
+        # nn.init.normal_(self.input_layer.linear.weight, std=0.02)
+        # nn.init.constant_(self.input_layer.adaLN_modulation[-1].weight, 0) 
+        # nn.init.constant_(self.input_layer.adaLN_modulation[-1].bias, 0) 
         # Output
         nn.init.constant_(self.output_layer.linear.weight, 0.0)
         nn.init.constant_(self.output_layer.linear.bias, 0.0)
@@ -340,6 +341,9 @@ class DiT(nn.Module):
         for block in self.blocks:
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+            if block.cross_attention:
+                nn.init.constant_(block.adaLN_modulation_mca[-1].weight, 0)
+                nn.init.constant_(block.adaLN_modulation_mca[-1].bias, 0)
 
 
     def forward(self, x, t, y, x0):
@@ -361,7 +365,8 @@ class DiT(nn.Module):
             y = 0
         c = t + y                                # (N, D)
 
-        x = self.input_layer(x, c)
+        #x = self.input_layer(x, c)
+        x = self.input_layer(x)
         for block in self.blocks:
             x = block(x, c, x0)                      # (N, L, D)
         x = self.output_layer(x, c)
