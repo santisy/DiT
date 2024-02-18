@@ -26,6 +26,8 @@ def tree_to_img_mnist(data0: np.ndarray, data1: np.ndarray):
         if data1[j * 3 + 2] > 0:
             posIdx = int(data1[j * 3] * 16)
             posIdx = np.clip(posIdx, 0, 15)
+            if (data0[posIdx * 3 + 2] == 0):
+                continue
             parIdx = int(data0[posIdx * 3 + 1] * 16)
             parIdx = np.clip(parIdx, 0, 15)
             curIdx = int(data1[j * 3 + 1] * 4)
