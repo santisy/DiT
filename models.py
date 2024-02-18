@@ -133,9 +133,10 @@ class CrossAttention(nn.Module):
     """
     def __init__(self, hidden_size, num_heads):
         super().__init__()
-        self.proj_q = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.proj_k = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.proj_v = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.proj_q = nn.Linear(hidden_size, hidden_size, bias=True)
+        self.proj_k = nn.Linear(hidden_size, hidden_size, bias=True)
+        self.proj_v = nn.Linear(hidden_size, hidden_size, bias=True)
+        self.proj_back = nn.Linear(hidden_size, hidden_size, bias=True)
 
         self.multihead_attention = nn.MultiheadAttention(embed_dim=hidden_size,
                                                          num_heads=num_heads,
@@ -147,6 +148,7 @@ class CrossAttention(nn.Module):
         v = self.proj_v(c)
 
         attn_out, _ = self.multihead_attention(q, k, v)
+        attn_out = self.proj_back(attn_out)
 
         return attn_out
 
