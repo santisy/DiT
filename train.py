@@ -283,7 +283,7 @@ def main(args):
                                                       z.shape,
                                                       z,
                                                       model_kwargs=model_kwargs,
-                                                      clip_denoised=False,
+                                                      clip_denoised=True,
                                                       progress=False,
                                                       device=device)
                     data0 = ((x0 + 1.0) / 2.0).detach().cpu().numpy()

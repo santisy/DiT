@@ -15,5 +15,5 @@ data:
     condition_node_dim: 3
 
 diffusion:
-    noise_schedule: "cosine"
+    noise_schedule: "linear"
     diffusion_steps: 1000
