@@ -1,0 +1,19 @@
+# TODO: Enlarge the model size when formally running
+model:
+    hidden_size: 768
+    depth: 12
+    mlp_ratio: 4.0
+    cross_layers: [2, 4, 6, 8, 10]
+    num_heads: 12
+
+dataset: MNISTPermutedDataset
+
+data:
+    num_classes: -1
+    in_channels: 3 # Input Channel
+    condition_node_num: 16
+    condition_node_dim: 3
+
+diffusion:
+    noise_schedule: "cosine"
+    diffusion_steps: 1000
