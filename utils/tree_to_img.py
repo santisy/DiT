@@ -1,11 +1,12 @@
 import numpy as np
 
-def tree_to_img_mnist(data0: np.ndarray, data1: np.ndarray):
+def tree_to_img_mnist(data0: np.ndarray, data1: np.ndarray, aligned_gen=False):
     """
         Input:
             (parIdx, curIdx, value)
             data0: [16 * 3,], the first level node information
             data1: [64 * 3,], the second level node information
+            aligned_gen: flag of aligned generation or not
         Output:
             img0: First level image
             img1: Second level image
@@ -24,14 +25,19 @@ def tree_to_img_mnist(data0: np.ndarray, data1: np.ndarray):
     
     for j in range(64):
         if data1[j * 3 + 2] > 0:
-            posIdx = int(data1[j * 3] * 16)
-            posIdx = np.clip(posIdx, 0, 15)
-            if (data0[posIdx * 3 + 2] == 0):
-                continue
-            parIdx = int(data0[posIdx * 3 + 1] * 16)
-            parIdx = np.clip(parIdx, 0, 15)
-            curIdx = int(data1[j * 3 + 1] * 4)
-            curIdx = np.clip(curIdx, 0, 3)
+            if not aligned_gen:
+                posIdx = int(data1[j * 3] * 16)
+                posIdx = np.clip(posIdx, 0, 15)
+                if (data0[posIdx * 3 + 2] == 0):
+                    continue
+                parIdx = int(data0[posIdx * 3 + 1] * 16)
+                parIdx = np.clip(parIdx, 0, 15)
+                curIdx = int(data1[j * 3 + 1] * 4)
+                curIdx = np.clip(curIdx, 0, 3)
+            else:
+                parIdx = int(data0[j // 4 * 3 + 1] * 16)
+                curIdx = j % 4
+
             x_j = parIdx % 4
             y_j = parIdx // 4
             x_k = curIdx % 2

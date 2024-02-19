@@ -1,10 +1,15 @@
 # TODO: Enlarge the model size when formally running
+define: &aligned_gen_flag true
+
 model:
     hidden_size: 384
     depth: 12
     mlp_ratio: 4.0
     cross_layers: [2, 4, 6, 8, 10]
     num_heads: 8
+    sibling_num: 4 # Quad tree
+    aligned_gen: *aligned_gen_flag
+
 
 dataset: MNISTPermutedDataset
 
@@ -13,6 +18,7 @@ data:
     in_channels: 3 # Input Channel
     condition_node_num: 16
     condition_node_dim: 3
+    aligned_gen: *aligned_gen_flag
 
 diffusion:
     noise_schedule: "cosine"

@@ -13,6 +13,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 import math
+from functools import partial
+
 from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
 
 
@@ -26,33 +28,38 @@ def modulate(x, shift, scale):
 
 class PreviousNodeEmbedder(nn.Module):
     def __init__(self, node_num: int, node_dim: int, hidden_size: int,
+                 aligned_gen=False,
                  frequency_embedding_size=256):
         super().__init__()
+        self.aligned_gen = aligned_gen
+
+        if aligned_gen:
+            frequency_embedding_size = 0
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size + node_dim, hidden_size, bias=True),
-            nn.LayerNorm(hidden_size, elementwise_affine=True, eps=1e-6),
             nn.SiLU(),
             nn.Linear(hidden_size, hidden_size, bias=True),
-            nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6),
         )
 
         # Pre-compute the positional embedding
-        indices = torch.arange(node_num).float() / node_num
-        indices = (indices - 0.5) * 2.0 # normalize the coordinate to [-1.0, 1.0]
-        indices = indices.reshape(node_num, 1)
-        coeffs = 2 ** torch.arange(frequency_embedding_size // 2) * torch.pi
-        coeffs = coeffs.reshape(frequency_embedding_size // 2, 1).repeat([1, 2])
-        coeffs[:, 1] = coeffs[:, 1] + torch.pi / 2.0
-        coeffs = coeffs.flatten().reshape(1, -1)
-        pos_embeddings = torch.sin(indices * coeffs) # NODE_NUM X EMBED_SIZE
-        self.register_buffer("pos_embeddings", pos_embeddings)
+        if not aligned_gen:
+            indices = torch.arange(node_num).float() / node_num
+            indices = (indices - 0.5) * 2.0 # normalize the coordinate to [-1.0, 1.0]
+            indices = indices.reshape(node_num, 1)
+            coeffs = 2 ** torch.arange(frequency_embedding_size // 2) * torch.pi
+            coeffs = coeffs.reshape(frequency_embedding_size // 2, 1).repeat([1, 2])
+            coeffs[:, 1] = coeffs[:, 1] + torch.pi / 2.0
+            coeffs = coeffs.flatten().reshape(1, -1)
+            pos_embeddings = torch.sin(indices * coeffs) # NODE_NUM X EMBED_SIZE
+            self.register_buffer("pos_embeddings", pos_embeddings)
 
 
     def forward(self, nodes: torch.Tensor):
-        batch_size = nodes.size(0)
-        nodes = torch.cat([self.pos_embeddings.unsqueeze(0).repeat(batch_size, 1, 1),
-                           nodes],
-                           dim=-1)
+        if not self.aligned_gen:
+            batch_size = nodes.size(0)
+            nodes = torch.cat([self.pos_embeddings.unsqueeze(0).repeat(batch_size, 1, 1),
+                            nodes],
+                            dim=-1)
         embedded = self.mlp(nodes)
         return embedded
 
@@ -161,9 +168,12 @@ class DiTBlock(nn.Module):
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, 
-                 cross_attention=False, **block_kwargs):
+                 aligned_gen=False,
+                 cross_attention=False,
+                 **block_kwargs):
         super().__init__()
         self.cross_attention = cross_attention
+        self.aligned_gen = aligned_gen
 
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
@@ -172,7 +182,7 @@ class DiTBlock(nn.Module):
         approx_gelu = lambda: nn.GELU(approximate="tanh")
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
 
-        if cross_attention:
+        if cross_attention: # This is a flag meant for conditional injection
             self.cross = CrossAttention(hidden_size, num_heads)
             self.norm0 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
             self.adaLN_modulation_mca = nn.Sequential(nn.SiLU(),
@@ -219,10 +229,16 @@ class FinalLayer(nn.Module):
     """
     The final layer of DiT.
     """
-    def __init__(self, hidden_size, out_channels):
+    def __init__(self, hidden_size, out_channels,
+                 sibling_num=4,
+                 aligned_gen=False):
         super().__init__()
+        self.aligned_gen = aligned_gen
+        self.sibling_num = sibling_num
+
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(hidden_size, out_channels, bias=True)
+        out_ch = out_channels if not aligned_gen else out_channels * sibling_num
+        self.linear = nn.Linear(hidden_size, out_ch, bias=True)
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(hidden_size, 2 * hidden_size, bias=True)
@@ -232,7 +248,25 @@ class FinalLayer(nn.Module):
         shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
         x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
+        if self.aligned_gen:
+            # Unpack
+            B, L, C = x.shape
+            x = x.reshape(B, L, self.sibling_num, C // self.sibling_num)
+            x = x.reshape(B, L * self.sibling_num, C // self.sibling_num)
         return x
+
+class PackLayer(nn.Module):
+    """Packing node"""
+    def __init__(self, in_channels, hidden_size, sibling_num=4):
+        super().__init__()
+        self.sibling_num = sibling_num
+        self.map = nn.Linear(in_channels * sibling_num, hidden_size)
+
+    def forward(self, x):
+        B, L, C = x.shape
+        x = x.reshape(B, L // self.sibling_num, self.sibling_num, C)
+        x = x.reshape(B, L // self.sibling_num, self.sibling_num * C)
+        return self.map(x)
 
 
 class DiT(nn.Module):
@@ -252,6 +286,8 @@ class DiT(nn.Module):
         condition_node_num=16, # What is the number of nodes in previous level
         condition_node_dim=3,
         cross_layers=[4, 8, 12],
+        aligned_gen=True,
+        sibling_num=4,
         # ---- optional
         num_classes=1000,
         # ---- absolete parameters
@@ -266,11 +302,15 @@ class DiT(nn.Module):
         self.num_heads = num_heads
 
         # Input layer
-        self.input_layer = nn.Linear(in_channels, hidden_size)
+        if not aligned_gen:
+            self.input_layer = nn.Linear(in_channels, hidden_size)
+        else:
+            self.input_layer = PackLayer(in_channels, hidden_size, sibling_num)
 
         self.n_embedder = PreviousNodeEmbedder(condition_node_num,
                                                condition_node_dim,
-                                               hidden_size)
+                                               hidden_size,
+                                               aligned_gen=aligned_gen)
         # This is to patchify images from NCHW -> NLC
         # We will not use in our fully tokenized transformer case
         #self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
@@ -285,15 +325,22 @@ class DiT(nn.Module):
         #self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
 
         self.blocks = nn.ModuleList()
+        block_class = partial(DiTBlock,
+                              hidden_size,
+                              num_heads,
+                              mlp_ratio=mlp_ratio,
+                              aligned_gen=aligned_gen)
         for i in range(depth):
             if i not in cross_layers:
-                self.blocks.append(DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio))
+                self.blocks.append(block_class())
             else:
-                self.blocks.append(DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, cross_attention=True))
+                self.blocks.append(block_class(cross_attention=True))
 
         # We do not need final layers
         #self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
-        self.output_layer = FinalLayer(hidden_size, self.out_channels)
+        self.output_layer = FinalLayer(hidden_size, self.out_channels,
+                                       sibling_num=sibling_num,
+                                       aligned_gen=aligned_gen)
 
         self.initialize_weights()
 

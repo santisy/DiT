@@ -164,7 +164,10 @@ def main(args):
         hidden_size=config.model.hidden_size,
         mlp_ratio=config.model.mlp_ratio,
         depth=config.model.depth,
-        num_heads=config.model.num_heads
+        num_heads=config.model.num_heads,
+        # Other flags
+        aligned_gen=config.model.aligned_gen,
+        sibling_num=config.model.sibling_num
     )
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
@@ -292,7 +295,9 @@ def main(args):
                     data1 = np.clip(data1, 0.0, 1.0)
                     for i in range(4): # Sample up to 4 images
                         img0, img1 = tree_to_img_mnist(data0[i].flatten(),
-                                                       data1[i].flatten())
+                                                       data1[i].flatten(),
+                                                       aligned_gen=config.model.aligned_gen
+                                                       )
                         cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_0.png", img0)
                         cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_1.png", img1)
 
