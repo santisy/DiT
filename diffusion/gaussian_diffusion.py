@@ -111,6 +111,10 @@ def log_snr_to_beta(logsnr):
     alphas = alphas_cumprod[1:] / alphas_cumprod[:-1]
     return 1 - alphas
 
+@th.jit.script
+def xglinear_log_snr(t, snr0: float=20., snr1: float = -10.):
+    return (snr1-snr0)*t + snr0
+
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
     Get a pre-defined beta schedule for the given name.
@@ -157,6 +161,11 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
         output = (v_end - output) / (v_end - v_start)
         output = th.clip(output, 1e-9, 9.999e-1)
         logsnr = th.log(output / (1 - output))
+        betas = log_snr_to_beta(logsnr)
+        return betas
+    elif schedule_name == "xg_linear":
+        t = th.linspace(0, 1, num_diffusion_timesteps + 1, dtype=th.float32)
+        logsnr = xglinear_log_snr(t)
         betas = log_snr_to_beta(logsnr)
         return betas
     else:
