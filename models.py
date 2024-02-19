@@ -50,6 +50,8 @@ class PreviousNodeEmbedder(nn.Module):
         #coeffs[:, 1] = coeffs[:, 1] + torch.pi / 2.0
         #coeffs = coeffs.flatten().reshape(1, -1)
         #pos_embeddings = torch.sin(indices * coeffs) # NODE_NUM X EMBED_SIZE
+
+        # TODO: this positional embedding should change in 3D case.
         pos_embeddings = get_2d_sincos_pos_embed(hidden_size, int(node_num ** 0.5))
         self.register_buffer("pos_embeddings",
                              torch.from_numpy(pos_embeddings).float().unsqueeze(0))
@@ -167,10 +169,12 @@ class DiTBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, 
                  aligned_gen=False,
                  cross_attention=False,
+                 add_inject=False,
                  **block_kwargs):
         super().__init__()
         self.cross_attention = cross_attention
         self.aligned_gen = aligned_gen
+        self.add_inject = add_inject
 
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
@@ -180,11 +184,14 @@ class DiTBlock(nn.Module):
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
 
         if cross_attention: # This is a flag meant for conditional injection
-            self.cross = CrossAttention(hidden_size, num_heads)
-            self.norm0 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-            self.norm00 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-            self.adaLN_modulation_mca = nn.Sequential(nn.SiLU(),
-                                                      nn.Linear(hidden_size, 5 * hidden_size, bias=True))
+            if not add_inject:
+                self.cross = CrossAttention(hidden_size, num_heads)
+                self.norm0 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+                self.norm00 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+                self.adaLN_modulation_mca = nn.Sequential(nn.SiLU(),
+                                                        nn.Linear(hidden_size, 5 * hidden_size, bias=True))
+            else:
+                self.layer_AI = nn.Linear(hidden_size, hidden_size)
 
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
@@ -194,9 +201,12 @@ class DiTBlock(nn.Module):
 
     def forward(self, x, c, x0):
         if self.cross_attention:
-            gate_mca, shift_mca, scale_mca, shift_mca0, scale_mca0 =self.adaLN_modulation_mca(c).chunk(5, dim=1)
-            x = x + gate_mca.unsqueeze(1) * self.cross(modulate(self.norm0(x), shift_mca, scale_mca),
-                                                       modulate(self.norm00(x0), shift_mca0, scale_mca0))
+            if not self.add_inject:
+                gate_mca, shift_mca, scale_mca, shift_mca0, scale_mca0 =self.adaLN_modulation_mca(c).chunk(5, dim=1)
+                x = x + gate_mca.unsqueeze(1) * self.cross(modulate(self.norm0(x), shift_mca, scale_mca),
+                                                        modulate(self.norm00(x0), shift_mca0, scale_mca0))
+            else:
+                x = x + self.layer_AI(x0)
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
@@ -286,6 +296,7 @@ class DiT(nn.Module):
         cross_layers=[4, 8, 12],
         aligned_gen=True,
         sibling_num=4,
+        add_inject=False,
         # ---- optional
         num_classes=1000,
         # ---- absolete parameters
@@ -301,6 +312,7 @@ class DiT(nn.Module):
         self.condition_node_num = condition_node_num
         self.sibling_num = sibling_num
         self.aligned_gen = aligned_gen
+        self.add_inject = add_inject
 
         # Input layer
         if not aligned_gen:
@@ -334,7 +346,9 @@ class DiT(nn.Module):
                               hidden_size,
                               num_heads,
                               mlp_ratio=mlp_ratio,
-                              aligned_gen=aligned_gen)
+                              aligned_gen=aligned_gen,
+                              add_inject=add_inject
+                              )
         for i in range(depth):
             if i not in cross_layers:
                 self.blocks.append(block_class())
@@ -397,7 +411,7 @@ class DiT(nn.Module):
         for block in self.blocks:
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
-            if block.cross_attention:
+            if block.cross_attention and not self.add_inject:
                 nn.init.constant_(block.adaLN_modulation_mca[-1].weight, 0)
                 nn.init.constant_(block.adaLN_modulation_mca[-1].bias, 0)
 
@@ -492,7 +506,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     assert embed_dim % 2 == 0
     omega = np.arange(embed_dim // 2, dtype=np.float64)
     omega /= embed_dim / 2.
-    omega = 1. / 10000**omega  # (D/2,)
+    omega = 1. / 10000 ** omega  # (D/2,)
 
     pos = pos.reshape(-1)  # (M,)
     out = np.einsum('m,d->md', pos, omega)  # (M, D/2), outer product

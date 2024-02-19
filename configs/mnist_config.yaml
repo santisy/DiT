@@ -9,6 +9,7 @@ model:
     num_heads: 8
     sibling_num: 4 # Quad tree
     aligned_gen: *aligned_gen_flag
+    add_inject: true
 
 
 dataset: MNISTPermutedDataset
