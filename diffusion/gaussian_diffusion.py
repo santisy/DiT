@@ -167,6 +167,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
         t = th.linspace(0, 1, num_diffusion_timesteps + 1, dtype=th.float32)
         logsnr = xglinear_log_snr(t)
         betas = log_snr_to_beta(logsnr)
+        betas = th.clip(betas, min=1e-8)
         return betas
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
