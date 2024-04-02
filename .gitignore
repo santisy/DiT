@@ -1,0 +1,8 @@
+.vscode
+
+__pycache__
+*/**/__pycache__
+
+datasets
+test_imgs
+training_runs

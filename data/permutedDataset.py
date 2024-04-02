@@ -1,7 +1,5 @@
-import torch
-from torch.utils.data import Dataset
-
 import numpy as np
+from torch.utils.data import Dataset
 
 
 class MNISTPermutedDataset(Dataset):
