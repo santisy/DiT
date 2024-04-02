@@ -3,6 +3,7 @@
 //
 
 #include <cfloat>
+#include <cstring>
 #include <filesystem>
 #include <vector>
 #include <fstream>
@@ -55,7 +56,7 @@ float getMaximumVoxelLength(std::string dataRoot, const int level0UnitLength = 3
 }
 
 void loadFromFile(std::ifstream& file,
-                  torch::Tensor &out,
+                  at::Tensor &out,
                   const int length,
                   const int unitLength,
                   const bool rootFlag){
@@ -65,16 +66,51 @@ void loadFromFile(std::ifstream& file,
         file.read(reinterpret_cast<char*>(data), sizeof(float) * unitLength);
         int parentIdx = rootFlag ? 0 : static_cast<int>(data[1]);
         int currentIdx = static_cast<int>(data[0]);
-        torch::Tensor nodeVec = torch::from_blob(data + 2, {unitLength - 2}).clone();
-        out.index_put_({parentIdx * 8 + currentIdx, torch::indexing::None}, nodeVec);
+        at::Tensor nodeVec = at::from_blob(data + 2, {unitLength - 2}).clone();
+        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice()}, nodeVec);
         delete[] data;
     }
 }
 
-std::vector<torch::Tensor> readAndConstruct(std::string inputPath,
-                                            const int level0UnitLength = 361,
-                                            const int level1UnitLength = 139,
-                                            const int level2UnitLength = 139){
+void loadFromFileAndAssignPos(std::ifstream& file,
+                              at::Tensor &preScales,
+                              at::Tensor &outScales,
+                              at::Tensor &out,
+                              at::Tensor &prevPos,
+                              at::Tensor &outPos,
+                              const int length,
+                              const int unitLength){
+
+    for (int i = 0; i < length; i++){
+        auto data = new float[unitLength];
+        file.read(reinterpret_cast<char*>(data), sizeof(float) * unitLength);
+        int parentIdx = static_cast<int>(data[1]);
+        int currentIdx = static_cast<int>(data[0]);
+        int outIdx = parentIdx * 8 + currentIdx;
+
+        at::Tensor absoluteScale = preScales.index({parentIdx}) * 0.5f * 1.05f;
+        outScales.index_put_({outIdx}, absoluteScale);
+
+        int zIdx = (currentIdx >> 2);
+        int yIdx = ((currentIdx - zIdx * 4) >> 1);
+        int xIdx = currentIdx - zIdx * 4 - yIdx * 2;
+        at::Tensor scale = preScales.index({parentIdx}) * 0.5f;
+
+        outPos.index_put_({outIdx, 0}, prevPos.index({parentIdx, 0}) - scale + scale * 0.95f * xIdx + absoluteScale / 2.0f);
+        outPos.index_put_({outIdx, 1}, prevPos.index({parentIdx, 1}) - scale + scale * 0.95f * yIdx + absoluteScale / 2.0f);
+        outPos.index_put_({outIdx, 2}, prevPos.index({parentIdx, 2}) - scale + scale * 0.95f * zIdx + absoluteScale / 2.0f);
+
+        at::Tensor nodeVec = at::from_blob(data + 2, {unitLength - 2}).clone();
+        out.index_put_({outIdx, at::indexing::Slice()}, nodeVec);
+
+        delete[] data;
+    }
+}
+
+std::vector<at::Tensor> readAndConstruct(std::string inputPath,
+                                         const int level0UnitLength = 361,
+                                         const int level1UnitLength = 139,
+                                         const int level2UnitLength = 139){
     std::ifstream file(inputPath, std::ios::in | std::ios::binary);
 
     float octreeRootNumFloat;
@@ -90,14 +126,25 @@ std::vector<torch::Tensor> readAndConstruct(std::string inputPath,
     length2 = static_cast<int>(length2f);
 
     // The deducted 2 are the tree topology indicators (parent ID and children ID)
-    torch::Tensor level0Tensor = torch::zeros({octreeRootNum, level0UnitLength - 2});
-    torch::Tensor level1Tensor = torch::zeros({octreeRootNum * 8, level1UnitLength - 2});
-    torch::Tensor level2Tensor = torch::zeros({octreeRootNum * 8 * 8, level2UnitLength - 2});
-    loadFromFile(file, level0Tensor, length0, level0UnitLength, true);
-    loadFromFile(file, level1Tensor, length1, level1UnitLength, false);
-    loadFromFile(file, level2Tensor, length2, level2UnitLength, false);
+    at::Tensor level0Tensor = at::zeros({octreeRootNum, level0UnitLength - 2});
+    at::Tensor level1Tensor = at::zeros({octreeRootNum * 8, level1UnitLength - 2});
+    at::Tensor level2Tensor = at::zeros({octreeRootNum * 8 * 8, level2UnitLength - 2});
 
-    return {level0Tensor, level1Tensor, level2Tensor};
+    // Positions
+    at::Tensor level1Positions = at::zeros({octreeRootNum * 8, 3});
+    at::Tensor level2Positions = at::zeros({octreeRootNum * 8 * 8, 3});
+    // Scales
+    at::Tensor level1Scales = at::zeros({octreeRootNum * 8});
+    at::Tensor level2Scales = at::zeros({octreeRootNum * 8 * 8});
+
+    loadFromFile(file, level0Tensor, length0, level0UnitLength, true);
+    at::Tensor level0Positions = level0Tensor.index({at::indexing::Slice(), at::indexing::Slice(-3, at::indexing::None)}).clone();
+    at::Tensor level0Scales = level0Tensor.index({at::indexing::Slice(), -7}).clone();
+    loadFromFileAndAssignPos(file, level0Scales, level1Scales, level1Tensor, level0Positions, level1Positions, length1, level1UnitLength);
+    loadFromFileAndAssignPos(file, level1Scales, level2Scales, level2Tensor, level1Positions, level2Positions, length2, level2UnitLength);
+
+    return {level0Tensor, level1Tensor, level2Tensor,
+            level0Positions, level1Positions, level2Positions};
 }
 
 

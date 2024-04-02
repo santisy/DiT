@@ -14,8 +14,11 @@ import torch.nn as nn
 import numpy as np
 import math
 from functools import partial
+from typing import List
 
-from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
+from timm.models.vision_transformer import Attention, Mlp
+
+from utils.positional_embedding import fourier_positional_encoding
 
 
 def modulate(x, shift, scale):
@@ -27,40 +30,28 @@ def modulate(x, shift, scale):
 #################################################################################
 
 class PreviousNodeEmbedder(nn.Module):
-    def __init__(self, node_num: int, node_dim: int, hidden_size: int,
-                 aligned_gen=False,
-                 frequency_embedding_size=256):
+    def __init__(self, node_dim: List[int], hidden_size: int):
         super().__init__()
-        self.aligned_gen = aligned_gen
 
-        if aligned_gen:
-            frequency_embedding_size = 0
-        self.mlp = nn.Sequential(
-            nn.Linear(node_dim, hidden_size, bias=True),
-            nn.SiLU(),
-            nn.Linear(hidden_size, hidden_size, bias=True),
-        )
+        self.mlp_list = nn.ModuleList()
 
-        # Pre-compute the positional embedding
-        #indices = torch.arange(node_num).float() / node_num
-        #indices = (indices - 0.5) * 2.0 # normalize the coordinate to [-1.0, 1.0]
-        #indices = indices.reshape(node_num, 1)
-        #coeffs = 2 ** torch.arange(frequency_embedding_size // 2) * torch.pi
-        #coeffs = coeffs.reshape(frequency_embedding_size // 2, 1).repeat([1, 2])
-        #coeffs[:, 1] = coeffs[:, 1] + torch.pi / 2.0
-        #coeffs = coeffs.flatten().reshape(1, -1)
-        #pos_embeddings = torch.sin(indices * coeffs) # NODE_NUM X EMBED_SIZE
+        for nd in node_dim:
+            if nd == -1: break
 
-        # TODO: this positional embedding should change in 3D case.
-        pos_embeddings = get_2d_sincos_pos_embed(hidden_size, int(node_num ** 0.5))
-        self.register_buffer("pos_embeddings",
-                             torch.from_numpy(pos_embeddings).float().unsqueeze(0))
+            self.mlp_list.append(
+                nn.Sequential(
+                nn.Linear(nd, hidden_size, bias=True),
+                nn.SiLU(),
+                nn.Linear(hidden_size, hidden_size, bias=True)
+                )
+            )
 
-
-    def forward(self, nodes: torch.Tensor):
-        embedded = self.mlp(nodes)
-        embedded = embedded + self.pos_embeddings
-        return embedded
+    def forward(self, nodes: List[torch.Tensor], PEs: List[torch.Tensor]):
+        # TODO: Positional embedding comes from the data loader
+        embedded_out = []
+        for n, pe, mlp in zip(nodes, PEs, self.mlp_list):
+            embedded_out.append(mlp(n) + pe)
+        return embedded_out
 
 
 class TimestepEmbedder(nn.Module):
@@ -166,15 +157,16 @@ class DiTBlock(nn.Module):
     """
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, 
-                 aligned_gen=False,
+    def __init__(self, hidden_size, num_heads,
+                 mlp_ratio=4.0, 
+                 cond_num=1,
                  cross_attention=False,
                  add_inject=False,
                  **block_kwargs):
         super().__init__()
         self.cross_attention = cross_attention
-        self.aligned_gen = aligned_gen
         self.add_inject = add_inject
+        self.cond_num = cond_num
 
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
@@ -185,13 +177,21 @@ class DiTBlock(nn.Module):
 
         if cross_attention: # This is a flag meant for conditional injection
             if not add_inject:
-                self.cross = CrossAttention(hidden_size, num_heads)
-                self.norm0 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-                self.norm00 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-                self.adaLN_modulation_mca = nn.Sequential(nn.SiLU(),
-                                                        nn.Linear(hidden_size, 5 * hidden_size, bias=True))
+                self.cross_list = nn.ModuleList()
+                self.norm0_list = nn.ModuleList()
+                self.norm00_list = nn.ModuleList()
+                self.adaLN_modulation_mca_list = nn.ModuleList()
+
+                for _ in range(cond_num):
+                    self.cross_list.append(CrossAttention(hidden_size, num_heads))
+                    self.norm0_list.append(nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6))
+                    self.norm00_list.append(nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6))
+                    self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
+                                                          nn.Linear(hidden_size, 5 * hidden_size, bias=True)))
             else:
-                self.layer_AI = nn.Linear(hidden_size, hidden_size)
+                self.layer_list_add_inject = nn.ModuleList()
+                for _ in range(cond_num):
+                    self.layer_list_add_inject.append(nn.Linear(hidden_size, hidden_size))
 
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
@@ -200,13 +200,16 @@ class DiTBlock(nn.Module):
 
 
     def forward(self, x, c, x0):
+        # x0 means the previous level results (condition)
+
         if self.cross_attention:
             if not self.add_inject:
-                gate_mca, shift_mca, scale_mca, shift_mca0, scale_mca0 =self.adaLN_modulation_mca(c).chunk(5, dim=1)
-                x = x + gate_mca.unsqueeze(1) * self.cross(modulate(self.norm0(x), shift_mca, scale_mca),
-                                                        modulate(self.norm00(x0), shift_mca0, scale_mca0))
+                for cross, norm0, norm00, adaMM, x0_ in zip(self.cross_list, self.norm0_list, self.norm00_list, self.adaLN_modulation_mca_list, x0):
+                    gate_mca, shift_mca, scale_mca, shift_mca0, scale_mca0 = adaMM(c).chunk(5, dim=1)
+                    x = x + gate_mca.unsqueeze(1) * cross(modulate(norm0(x), shift_mca, scale_mca),
+                                                          modulate(norm00(x0_), shift_mca0, scale_mca0))
             else:
-                x = x + self.layer_AI(x0)
+                x = x + self.layer_add_inject(x0)
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
@@ -291,28 +294,26 @@ class DiT(nn.Module):
         class_dropout_prob=0.1,
         learn_sigma=True,
         # Newly added
-        condition_node_num=16, # What is the number of nodes in previous level
-        condition_node_dim=3,
+        condition_node_num=[], # What is the number of nodes in previous level
+        condition_node_dim=[],
         cross_layers=[4, 8, 12],
-        aligned_gen=True,
-        sibling_num=4,
         add_inject=False,
         # ---- optional
         num_classes=1000,
-        # ---- absolete parameters
-        patch_size=2,
-        input_size=32,
+        aligned_gen=False
     ):
         super().__init__()
+        if aligned_gen:
+            self.hidden_size = hidden_size = hidden_size * 8
+
+        self.sibling_num = sibling_num = 8 # Octree
         self.learn_sigma = learn_sigma
         self.in_channels = in_channels
         self.out_channels = in_channels * 2 if learn_sigma else in_channels
-        self.patch_size = patch_size
         self.num_heads = num_heads
         self.condition_node_num = condition_node_num
-        self.sibling_num = sibling_num
-        self.aligned_gen = aligned_gen
         self.add_inject = add_inject
+        self.aligned_gen = aligned_gen
 
         # Input layer
         if not aligned_gen:
@@ -322,33 +323,23 @@ class DiT(nn.Module):
 
         self.n_embedder = PreviousNodeEmbedder(condition_node_num,
                                                condition_node_dim,
-                                               hidden_size,
-                                               aligned_gen=aligned_gen)
+                                               hidden_size)
         # This is to patchify images from NCHW -> NLC
         # We will not use in our fully tokenized transformer case
-        #self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size)
         if num_classes > 0:
             self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         else:
             self.y_embedder = None
 
-        #num_patches = self.x_embedder.num_patches
-        # Will use fixed sin-cos embedding:
-        if aligned_gen:
-            self.pos_embed = nn.Parameter(torch.zeros(1,
-                                                      condition_node_num * sibling_num,
-                                                      hidden_size // sibling_num),
-                                          requires_grad=False)
 
         self.blocks = nn.ModuleList()
         block_class = partial(DiTBlock,
                               hidden_size,
                               num_heads,
                               mlp_ratio=mlp_ratio,
-                              aligned_gen=aligned_gen,
-                              add_inject=add_inject
-                              )
+                              cond_num=len(condition_node_num),
+                              add_inject=add_inject)
         for i in range(depth):
             if i not in cross_layers:
                 self.blocks.append(block_class())
@@ -356,7 +347,6 @@ class DiT(nn.Module):
                 self.blocks.append(block_class(cross_attention=True))
 
         # We do not need final layers
-        #self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.output_layer = FinalLayer(hidden_size, self.out_channels,
                                        sibling_num=sibling_num,
                                        aligned_gen=aligned_gen)
@@ -371,14 +361,6 @@ class DiT(nn.Module):
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
-
-        # Initialize (and freeze) pos_embed by sin-cos embedding:
-        # TODO: This embedding should be adaptive according to the input 
-        #   condition (parent node)
-        total_sibling_num = self.sibling_num * self.condition_node_num
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1],
-                                            int(total_sibling_num ** 0.5))
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         #w = self.x_embedder.proj.weight.data
@@ -412,22 +394,26 @@ class DiT(nn.Module):
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
             if block.cross_attention and not self.add_inject:
-                nn.init.constant_(block.adaLN_modulation_mca[-1].weight, 0)
-                nn.init.constant_(block.adaLN_modulation_mca[-1].bias, 0)
+                for adaMM in block.adaLN_modulation_mca_list:
+                    nn.init.constant_(adaMM[-1].weight, 0)
+                    nn.init.constant_(adaMM[-1].bias, 0)
 
+    def forward(self, x, t, y, x0, positions):
+        """
+            Forward pass of DiT.
+            x: (N, L, C) tensor of spatial inputs (images or latent representations of images)
+            t: (N,) tensor of diffusion timesteps
+            y: (N,) tensor of class labels
+            x0: **LIST** of (N, L0, C0) previous levels of nodes
+            positions: **LIST** of (N, L0, 3) positional embeddings
+        """
 
-    def forward(self, x, t, y, x0):
-        """
-        Forward pass of DiT.
-        x: (N, L, C) tensor of spatial inputs (images or latent representations of images)
-        t: (N,) tensor of diffusion timesteps
-        y: (N,) tensor of class labels
-        x0: (N, L0, C0) previous node
-        """
-        #x = self.x_embedder(x) + self.pos_embed  # (N, L, D), where T = H * W / patch_size ** 2
+        PEs = []
+        for pos in positions:
+            PEs.append(fourier_positional_encoding(pos))
 
         # Embed conditions and timesteps
-        x0 = self.n_embedder(x0)               # Previous node embedding
+        x0 = self.n_embedder(x0, PEs)               # Previous node embedding
         t = self.t_embedder(t)                   # (N, D)
         if self.y_embedder is not None:
             y = self.y_embedder(y, self.training)    # (N, D)
@@ -435,10 +421,10 @@ class DiT(nn.Module):
             y = 0
         c = t + y                                # (N, D)
 
-        #x = self.input_layer(x, c)
         x = self.input_layer(x)
-        if self.aligned_gen:
-            x = x + self.pos_embed.reshape(1, self.condition_node_num, -1)
+        # -1 means using the nearest level GT positions as the positional encoding
+        x = x + PEs[-1].reshape(1, self.condition_node_num, -1)
+
         for block in self.blocks:
             x = block(x, c, x0)                      # (N, L, D)
         x = self.output_layer(x, c)

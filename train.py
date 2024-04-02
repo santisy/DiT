@@ -33,9 +33,10 @@ import shutil
 
 from models import DiT_models, DiT
 from diffusion import create_diffusion
-from diffusers.models import AutoencoderKL
 from utils.tree_to_img import tree_to_img_mnist
 from torch.optim.lr_scheduler import StepLR
+
+from data.ofalg_dataset import OFLAGDataset
 
 
 # Dataset
@@ -153,22 +154,28 @@ def main(args):
     else:
         logger = create_logger(None)
 
+    # Create dataset
+    dataset = OFLAGDataset(args.data_root, **config.data)
+
+    # Temp variables
+    in_ch = dataset.get_level_vec_len(args.level_num)
+    level_num = args.level_num
+
     # Create model:
     model = DiT(
         # Data related
-        in_channels=config.data.in_channels,
+        in_channels=in_ch, # Combine to each children
         num_classes=config.data.num_classes,
-        condition_node_num=config.data.condition_node_num,
-        condition_node_dim=config.data.condition_node_dim,
+        condition_node_num=dataset.get_condition_num(level_num),
+        condition_node_dim=dataset.get_condition_dim(level_num),
         # Network itself related
-        hidden_size=config.model.hidden_size,
+        hidden_size=in_ch * 4, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,
         depth=config.model.depth,
         num_heads=config.model.num_heads,
         # Other flags
-        aligned_gen=config.model.aligned_gen,
-        sibling_num=config.model.sibling_num,
-        add_inject=config.model.add_inject
+        add_inject=config.model.add_inject,
+        aligned_gen=True if level_num != 0 else False
     )
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
@@ -185,16 +192,6 @@ def main(args):
     if not args.no_lr_decay:
         scheduler = StepLR(opt, step_size=1, gamma=0.999)
 
-    # Setup data:
-    #transform = transforms.Compose([
-    #    transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
-    #    transforms.RandomHorizontalFlip(),
-    #    transforms.ToTensor(),
-    #    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
-    #])
-    #dataset = ImageFolder(args.data_path, transform=transform)
-    dataset_class = getattr(permutedDataset, config.dataset)
-    dataset = dataset_class(*config.data)
 
     sampler = DistributedSampler(
         dataset,
@@ -330,6 +327,8 @@ if __name__ == "__main__":
     # Newly added argument
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--exp-id", type=str, required=True)
+    parser.add_argument("--data-root", type=str, required=True)
+    parser.add_argument("--level-num", type=int, required=True)
 
     args = parser.parse_args()
     main(args)
