@@ -167,7 +167,8 @@ def main(args):
         num_heads=config.model.num_heads,
         # Other flags
         aligned_gen=config.model.aligned_gen,
-        sibling_num=config.model.sibling_num
+        sibling_num=config.model.sibling_num,
+        add_inject=config.model.add_inject
     )
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
