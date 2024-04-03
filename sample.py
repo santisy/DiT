@@ -23,9 +23,13 @@ import cv2
 from utils.tree_to_img import tree_to_img_mnist
 
 import argparse
+from data.ofalg_dataset import OFLAGDataset
 
 
 def main(args):
+
+    # Create dataset. For denormalizing
+    dataset = OFLAGDataset(args.data_root, **config.data)
 
     # Load config
     with open(args.config_file, "r") as f:
@@ -50,6 +54,7 @@ def main(args):
         depth=config.model.depth,
         num_heads=config.model.num_heads
     ).to(device)
+
     # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
     ckpt_path = args.ckpt
     state_dict = find_model(ckpt_path)
@@ -101,5 +106,6 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", type=str, default=None,
                         help="Optional path to a DiT checkpoint (default: auto-download a pre-trained DiT-XL/2 model).")
     parser.add_argument("--config-file", type=str, required=True)
+    parser.add_argument("--data-root", type=str, require=True)
     args = parser.parse_args()
     main(args)

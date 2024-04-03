@@ -72,7 +72,6 @@ class OFLAGDataset(Dataset):
 
 
     def __getitem__(self, idx):
-        #TODO: Get positional embeddings
         file_path = self.file_paths[idx]
         level0_tensor, level1_tensor, level2_tensor, \
         level0_position, level1_position, level2_position \

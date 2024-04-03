@@ -96,6 +96,7 @@ void loadFromFileAndAssignPos(std::ifstream& file,
         int xIdx = currentIdx - zIdx * 4 - yIdx * 2;
         at::Tensor scale = preScales.index({parentIdx}) * 0.5f;
 
+        // Deduce the children positions as the children voxel center
         outPos.index_put_({outIdx, 0}, prevPos.index({parentIdx, 0}) - scale + scale * 0.95f * xIdx + absoluteScale / 2.0f);
         outPos.index_put_({outIdx, 1}, prevPos.index({parentIdx, 1}) - scale + scale * 0.95f * yIdx + absoluteScale / 2.0f);
         outPos.index_put_({outIdx, 2}, prevPos.index({parentIdx, 2}) - scale + scale * 0.95f * zIdx + absoluteScale / 2.0f);

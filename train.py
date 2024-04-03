@@ -15,32 +15,25 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torchvision.datasets import ImageFolder
-from torchvision import transforms
 import numpy as np
 from collections import OrderedDict
 from PIL import Image
 from copy import deepcopy
 from easydict import EasyDict as edict
-from glob import glob
 from ruamel.yaml import YAML
 from time import time
 import argparse
 import logging
 import os
-import cv2
 import shutil
+import json
 
-from models import DiT_models, DiT
+from models import DiT
 from diffusion import create_diffusion
-from utils.tree_to_img import tree_to_img_mnist
 from torch.optim.lr_scheduler import StepLR
 
 from data.ofalg_dataset import OFLAGDataset
-
-
-# Dataset
-import data.permutedDataset as permutedDataset
+from utils.copy import copy_back_fn
 
 
 #################################################################################
@@ -122,16 +115,25 @@ def main(args):
     """
     Trains a new DiT model.
     """
+    if args.work_on_tmp_dir:
+        tmp_dir = os.getenv("SLURM_TMPDIR", "")
+    else:
+        tmp_dir = ""
+
+    # Which level of tree now is training?
+    level_num = args.level_num
+
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
     # Load config
-    with open(args.config_file, "r") as f:
+    with open(args.config_file, "w") as f:
         yaml = YAML()
         config = edict(yaml.load(f))
 
     # Setup DDP:
     dist.init_process_group("nccl")
-    assert args.global_batch_size % dist.get_world_size() == 0, f"Batch size must be divisible by world size."
+    assert args.global_batch_size % dist.get_world_size() == 0, \
+        "Batch size must be divisible by world size."
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
     seed = args.global_seed * dist.get_world_size() + rank
@@ -141,16 +143,21 @@ def main(args):
 
     # Setup an experiment folder:
     if rank == 0:
-        os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
-        experiment_dir = f"{args.results_dir}/{args.exp_id}"  # Create an experiment folder
-        checkpoint_dir = f"{experiment_dir}/checkpoints"  # Stores saved model checkpoints
+        local_dir = os.path.join(args.results_dir, args.exp_id)
+        os.makedirs(local_dir, exist_ok=True)
+        run_dir = os.path.join(tmp_dir, args.results_dir, args.exp_id)
+        os.makedirs(run_dir, exist_ok=True)
+        checkpoint_dir = os.path.join(run_dir, "checkpoints")
         os.makedirs(checkpoint_dir, exist_ok=True)
-        logger = create_logger(experiment_dir)
-        logger.info(f"Experiment directory created at {experiment_dir}")
-        sample_dir = os.path.join(experiment_dir, "samples")
+        logger = create_logger(run_dir)
+        logger.info(f"Experiment directory created at {run_dir}")
+        sample_dir = os.path.join(run_dir, "samples")
         os.makedirs(sample_dir, exist_ok=True)
         # Backup the yaml config file
-        shutil.copy(args.config_file, experiment_dir)
+        shutil.copy(args.config_file, local_dir)
+        # Dump the runtime args
+        with open(os.path.join(local_dir, "arg_config.json"), "w") as f:
+            f.write(json.dumps(vars(args), indent=2))
     else:
         logger = create_logger(None)
 
@@ -158,8 +165,7 @@ def main(args):
     dataset = OFLAGDataset(args.data_root, **config.data)
 
     # Temp variables
-    in_ch = dataset.get_level_vec_len(args.level_num)
-    level_num = args.level_num
+    in_ch = dataset.get_level_vec_len(level_num)
 
     # Create model:
     model = DiT(
@@ -226,12 +232,33 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x0, x, y in loader:
-            x = x.to(device)
-            x0 = x0.to(device) # x0 is the nodes from previous level
+        for x0, x1, x2, p0, p1, p2, y in loader:
+
+            # To device
+            x0 = x0.to(device)
+            x1 = x1.to(device)
+            x2 = x2.to(device)
+            p0 = p0.to(device)
+            p1 = p1.to(device)
+            p2 = p2.to(device)
             y = y.to(device)
+
+            # According to the level_num set the training target x and the conditions
+            if level_num == 0:
+                x = x0 
+                xc = []
+                positions = []
+            elif level_num == 1:
+                x = x1
+                xc = [x0,]
+                positions = [p0,]
+            elif level_num == 2:
+                x = x2
+                xc = [x0, x1]
+                positions = [p0, p1]
+
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-            model_kwargs = dict(y=y, x0=x0)
+            model_kwargs = dict(y=y, x0=xc, positions=positions)
             loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
@@ -270,36 +297,37 @@ def main(args):
                         "opt": opt.state_dict(),
                         "args": args
                     }
-                    checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
+                    checkpoint_path = os.path.join(checkpoint_dir, f"{train_steps:07d}_l{level_num}.pt")
                     torch.save(checkpoint, checkpoint_path)
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
+                    if args.work_on_tmp_dir:
+                        copy_back_fn(checkpoint_path, local_dir)
                 dist.barrier()
 
-            # Sample images
-            if train_steps % args.sample_every == 0 and train_steps > 0:
-                if rank == 0:
-                    z = torch.randn_like(x).to(device)
-                    model_kwargs = dict(y=y, x0=x0)
-                    samples = diffusion.p_sample_loop(ema.forward,
-                                                      z.shape,
-                                                      z,
-                                                      model_kwargs=model_kwargs,
-                                                      clip_denoised=False,
-                                                      progress=False,
-                                                      device=device)
-                    data0 = ((x0 + 1.0) / 2.0).detach().cpu().numpy()
-                    data0 = np.clip(data0, 0.0, 1.0)
-                    data1 = ((samples + 1.0) / 2.0).detach().cpu().numpy()
-                    data1 = np.clip(data1, 0.0, 1.0)
-                    for i in range(4): # Sample up to 4 images
-                        img0, img1 = tree_to_img_mnist(data0[i].flatten(),
-                                                       data1[i].flatten(),
-                                                       aligned_gen=config.model.aligned_gen
-                                                       )
-                        cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_0.png", img0)
-                        cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_1.png", img1)
-
-                dist.barrier()
+            ## Sample images
+            #if train_steps % args.sample_every == 0 and train_steps > 0:
+            #    if rank == 0:
+            #        z = torch.randn_like(x).to(device)
+            #        model_kwargs = dict(y=y, x0=x0)
+            #        samples = diffusion.p_sample_loop(ema.forward,
+            #                                          z.shape,
+            #                                          z,
+            #                                          model_kwargs=model_kwargs,
+            #                                          clip_denoised=False,
+            #                                          progress=False,
+            #                                          device=device)
+            #        data0 = ((x0 + 1.0) / 2.0).detach().cpu().numpy()
+            #        data0 = np.clip(data0, 0.0, 1.0)
+            #        data1 = ((samples + 1.0) / 2.0).detach().cpu().numpy()
+            #        data1 = np.clip(data1, 0.0, 1.0)
+            #        for i in range(4): # Sample up to 4 images
+            #            img0, img1 = tree_to_img_mnist(data0[i].flatten(),
+            #                                           data1[i].flatten(),
+            #                                           aligned_gen=config.model.aligned_gen
+            #                                           )
+            #            cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_0.png", img0)
+            #            cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_1.png", img1)
+            #    dist.barrier()
 
         if not args.no_lr_decay:
             scheduler.step()
@@ -329,6 +357,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--level-num", type=int, required=True)
+    parser.add_argument("--work-on-tmp-dir", action="store_true")
 
     args = parser.parse_args()
     main(args)

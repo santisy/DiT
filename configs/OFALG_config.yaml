@@ -3,7 +3,7 @@ model:
     mlp_ratio: 2.0
     cross_layers: [2, 4, 6, 8, 10]
     num_heads: 8
-    add_inject: true
+    add_inject: false
 
 data:
     num_classes: -1

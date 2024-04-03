@@ -36,8 +36,6 @@ class PreviousNodeEmbedder(nn.Module):
         self.mlp_list = nn.ModuleList()
 
         for nd in node_dim:
-            if nd == -1: break
-
             self.mlp_list.append(
                 nn.Sequential(
                 nn.Linear(nd, hidden_size, bias=True),
@@ -200,7 +198,7 @@ class DiTBlock(nn.Module):
 
 
     def forward(self, x, c, x0):
-        # x0 means the previous level results (condition)
+        # x0 means the previous level embedded results (condition)
 
         if self.cross_attention:
             if not self.add_inject:
@@ -209,7 +207,8 @@ class DiTBlock(nn.Module):
                     x = x + gate_mca.unsqueeze(1) * cross(modulate(norm0(x), shift_mca, scale_mca),
                                                           modulate(norm00(x0_), shift_mca0, scale_mca0))
             else:
-                x = x + self.layer_add_inject(x0)
+                for layer_add, x0_ in zip(self.layer_list_add_inject, x0):
+                    x = x + layer_add(x0_)
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
@@ -304,7 +303,8 @@ class DiT(nn.Module):
     ):
         super().__init__()
         if aligned_gen:
-            self.hidden_size = hidden_size = hidden_size * 8
+            hidden_size = hidden_size * 8
+        self.hidden_size = hidden_size
 
         self.sibling_num = sibling_num = 8 # Octree
         self.learn_sigma = learn_sigma
@@ -321,8 +321,7 @@ class DiT(nn.Module):
         else:
             self.input_layer = PackLayer(in_channels, hidden_size, sibling_num)
 
-        self.n_embedder = PreviousNodeEmbedder(condition_node_num,
-                                               condition_node_dim,
+        self.n_embedder = PreviousNodeEmbedder(condition_node_dim,
                                                hidden_size)
         # This is to patchify images from NCHW -> NLC
         # We will not use in our fully tokenized transformer case
@@ -387,7 +386,9 @@ class DiT(nn.Module):
         nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
 
         # IntiaLize node embedder
-        nn.init.normal_(self.n_embedder.mlp[0].weight, std=0.02)
+        for mlp in self.n_embedder.mlp_list:
+            nn.init.normal_(mlp[0].weight, std=0.02)
+            nn.init.normal_(mlp[2].weight, std=0.02)
 
         # Zero-out adaLN modulation layers in DiT blocks:
         for block in self.blocks:
@@ -410,7 +411,7 @@ class DiT(nn.Module):
 
         PEs = []
         for pos in positions:
-            PEs.append(fourier_positional_encoding(pos))
+            PEs.append(fourier_positional_encoding(pos, self.hidden_size))
 
         # Embed conditions and timesteps
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding
@@ -423,7 +424,8 @@ class DiT(nn.Module):
 
         x = self.input_layer(x)
         # -1 means using the nearest level GT positions as the positional encoding
-        x = x + PEs[-1].reshape(1, self.condition_node_num, -1)
+        if len(PEs) > 0:
+            x = x + PEs[-1]
 
         for block in self.blocks:
             x = block(x, c, x0)                      # (N, L, D)
