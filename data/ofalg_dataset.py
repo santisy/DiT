@@ -2,7 +2,6 @@ import glob
 import os
 
 from torch.utils.data import Dataset
-
 from data_extensions import load_utils
 
 
@@ -54,6 +53,14 @@ class OFLAGDataset(Dataset):
             return [self._unit_length0 - 2, self._unit_length1 - 2]
         else:
             raise ValueError(f"Invalid level number {level_num}.")
+
+    @property
+    def octree_root_num(self):
+        return self._octree_root_num
+
+    @property
+    def max_voxel_len(self):
+        return self._max_voxel_len
 
     def denormalize(self, x, level_num):
         # Make sure normalize everything about to [-1.0, 1.0]

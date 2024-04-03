@@ -7,26 +7,26 @@
 """
 Sample new images from a pre-trained DiT.
 """
+import os
 import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-from torchvision.utils import save_image
 from diffusion import create_diffusion
-from diffusers.models import AutoencoderKL
 from download import find_model
 from models import DiT_models
 from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 from models import DiT
-import numpy as np
-import cv2
-from utils.tree_to_img import tree_to_img_mnist
 
 import argparse
 from data.ofalg_dataset import OFLAGDataset
+from data_extensions import load_utils
 
 
 def main(args):
+    # Make directories
+    os.makedirs(args.export_dir, exist_ok=True)
+    out_dir = args.export_dir
 
     # Create dataset. For denormalizing
     dataset = OFLAGDataset(args.data_root, **config.data)
@@ -41,71 +41,82 @@ def main(args):
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Create model:
-    model = DiT(
-        # Data related
-        in_channels=config.data.in_channels,
-        num_classes=config.data.num_classes,
-        condition_node_num=config.data.condition_node_num,
-        condition_node_dim=config.data.condition_node_dim,
-        # Network itself related
-        hidden_size=config.model.hidden_size,
-        mlp_ratio=config.model.mlp_ratio,
-        depth=config.model.depth,
-        num_heads=config.model.num_heads
-    ).to(device)
+    model_list = []
+    for l in range(3):
+        in_ch = dataset.get_level_vec_len(i)
+        # Create model:
+        model = DiT(
+            # Data related
+            in_channels=in_ch, # Combine to each children
+            num_classes=config.data.num_classes,
+            condition_node_num=dataset.get_condition_num(l),
+            condition_node_dim=dataset.get_condition_dim(l),
+            # Network itself related
+            hidden_size=in_ch * 4, # 4 times rule
+            mlp_ratio=config.model.mlp_ratio,
+            depth=config.model.depth,
+            num_heads=config.model.num_heads,
+            # Other flags
+            add_inject=config.model.add_inject,
+            aligned_gen=True if l != 0 else False
+        ).to(device)
+        # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
+        ckpt_path = args.ckpt[l]
+        state_dict = find_model(ckpt_path)
+        model.load_state_dict(state_dict)
+        model.eval()  # important!
+        model_list.append(model)
 
-    # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
-    ckpt_path = args.ckpt
-    state_dict = find_model(ckpt_path)
-    model.load_state_dict(state_dict)
-    model.eval()  # important!
     diffusion = create_diffusion(timestep_respacing="",
                                  **config.diffusion)
 
-    # Create sampling noise:
-    n = 4
-    z = torch.randn(4, 64, 3, device=device)
-    y = torch.tensor([-1,] * n, device=device)
+    batch_size = args.sample_batch_size
+    sample_num = args.sample_num
+    for i in range(sample_num // batch_size):
+        xc = []
+        positions = []
+        scales = []
+        for l in range(3):
+            length = int(dataset.octree_root_num * 8 ** l)
+            z = torch.randn(batch_size,
+                            length, 
+                            dataset.get_level_vec_len(l))
+            model_kwargs = dict(y=None, x0=xc, positions=positions)
+            # Sample images:
+            samples = diffusion.p_sample_loop(model.forward,
+                                              z.shape,
+                                              z,
+                                              model_kwargs=model_kwargs,
+                                              clip_denoised=False,
+                                              progress=False,
+                                              device=device)
+            xc.append(samples)
+            # TODO: get the positions from generated
+            if l > 0:
+                scale = torch.zeros(batch_size, length, 3).to(device)
+                positions.append(load_utils.deduce_position_from_sample(scales[-1], scale, positions[-1], length))
+                scales.append(scale)
+            else:
+                scales.append(samples[:, :, -7].clone() * dataset.max_voxel_len)
+                positions.append(samples[:, :, -3:].clone())
 
-    # Get previous layer condition
-    from data.permutedDataset import MNISTPermutedDataset
-    dataset = MNISTPermutedDataset()
-    x0 = []
-    for i in range(n):
-        data0, _, _ = dataset[i]
-        x0.append(torch.tensor(data0, device=device))
-    x0 = torch.stack(x0)
-
-    model_kwargs = dict(y=y, x0=x0)
-
-    # Sample images:
-    samples = diffusion.p_sample_loop(model.forward,
-                                      z.shape,
-                                      z,
-                                      model_kwargs=model_kwargs,
-                                      clip_denoised=False,
-                                      progress=True,
-                                      device=device)
-
-    # Save and display images:
-    data0 = ((x0 + 1.0) / 2.0).detach().cpu().numpy()
-    data0 = np.clip(data0, 0.0, 1.0)
-    data1 = ((samples + 1.0) / 2.0).detach().cpu().numpy()
-    data1 = np.clip(data1, 0.0, 1.0)
-    for i in range(4): # Sample up to 4 images
-        img0, img1 = tree_to_img_mnist(data0[i].flatten(),
-                                       data1[i].flatten())
-        cv2.imwrite(f"test_imgs/samples{i}_0.png", img0)
-        cv2.imwrite(f"test_imgs/smaples{i}_1.png", img1)
-
+        # Denormalize and dump
+        for j, (x0, x1, x2) in enumerate(zip(xc)):
+            x0 = dataset.denormalize(x0, 0).detach().cpu()
+            x1 = dataset.denormalize(x1, 1).detach().cpu()
+            x2 = dataset.denormalize(x2, 2).detach().cpu()
+            load_utils.dump_to_bin(os.path.join(out_dir, f"out_{j + i * batch_size:04d}.bin"),
+                                   x0, x1, x2, dataset.octree_root_num)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--ckpt", type=str, default=None,
-                        help="Optional path to a DiT checkpoint (default: auto-download a pre-trained DiT-XL/2 model).")
+    parser.add_argument("--ckpt", nargs='+',
+                        help="A list of strings that provides three level generation models.")
+    parser.add_argument("--export-dir", type=str, required=True)
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--data-root", type=str, require=True)
+    parser.add_argument("--sample-num", type=int, default=4)
+    parser.add_argument("--sample-batch-size", type=int, default=4)
     args = parser.parse_args()
     main(args)

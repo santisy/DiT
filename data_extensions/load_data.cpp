@@ -51,6 +51,7 @@ float getMaximumVoxelLength(std::string dataRoot, const int level0UnitLength = 3
             maxVL = std::max(maxVL, data[level0UnitLength - 7]);
             delete[] data;
         }
+        file.close();
     }
     return maxVL;
 }
@@ -144,8 +145,102 @@ std::vector<at::Tensor> readAndConstruct(std::string inputPath,
     loadFromFileAndAssignPos(file, level0Scales, level1Scales, level1Tensor, level0Positions, level1Positions, length1, level1UnitLength);
     loadFromFileAndAssignPos(file, level1Scales, level2Scales, level2Tensor, level1Positions, level2Positions, length2, level2UnitLength);
 
+    file.close();
+
     return {level0Tensor, level1Tensor, level2Tensor,
             level0Positions, level1Positions, level2Positions};
+}
+
+at::Tensor deducePositionFromSample(at::Tensor preScales,
+                                    at::Tensor &outScales,
+                                    at::Tensor &prevPos,
+                                    const int length){
+    at::Tensor outPos = at::zeros({preScales.size(0), length, 3}).to(preScales.device());
+    for (int i = 0; i < length; i++){
+        int parentIdx = i / 8;
+        int currentIdx = i % 8;
+        int outIdx = parentIdx * 8 + currentIdx;
+
+        at::Tensor absoluteScale = preScales.index({at::indexing::Slice(), parentIdx}) * 0.5f * 1.05f;
+        outScales.index_put_({at::indexing::Slice(), outIdx}, absoluteScale);
+
+        int zIdx = (currentIdx >> 2);
+        int yIdx = ((currentIdx - zIdx * 4) >> 1);
+        int xIdx = currentIdx - zIdx * 4 - yIdx * 2;
+        at::Tensor scale = preScales.index({at::indexing::Slice(), parentIdx}) * 0.5f;
+
+        // Deduce the children positions as the children voxel center
+        outPos.index_put_({at::indexing::Slice(), outIdx, 0}, prevPos.index({at::indexing::Slice(), parentIdx, 0}) - scale + scale * 0.95f * xIdx + absoluteScale / 2.0f);
+        outPos.index_put_({at::indexing::Slice(), outIdx, 1}, prevPos.index({at::indexing::Slice(), parentIdx, 1}) - scale + scale * 0.95f * yIdx + absoluteScale / 2.0f);
+        outPos.index_put_({at::indexing::Slice(), outIdx, 2}, prevPos.index({at::indexing::Slice(), parentIdx, 2}) - scale + scale * 0.95f * zIdx + absoluteScale / 2.0f);
+    }
+    return outPos;
+}
+
+void dumpToBin(std::string outPath,
+               at::Tensor &level0,
+               at::Tensor &level1,
+               at::Tensor &level2,
+               const int octreeRootNum){
+    std::ofstream file(outPath, std::ios::out | std::ios::binary);
+    const float octreeRootNumFloat = static_cast<float>(octreeRootNum);
+    file.write(reinterpret_cast<const char*>(&octreeRootNumFloat), sizeof(float));
+
+    std::vector<at::Tensor> level0_out;
+    std::vector<at::Tensor> level1_out;
+    std::vector<at::Tensor> level2_out;
+
+    for (int i = 0; i < octreeRootNum; i++){
+        if (torch::sum(torch::abs(level0.index({i, at::indexing::Slice(at::indexing::None, 7 * 7 *7)}))).item().toFloat() > 0.1){
+            break;
+        }
+        at::Tensor l0_out_with_pc = torch::zeros({level0.size(1) + 2});
+        l0_out_with_pc[0] = i; // Children index
+        l0_out_with_pc[1] = -1;
+        l0_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, level0.index({i}));
+        level0_out.push_back(l0_out_with_pc);
+    }
+
+    for (int i = 0; i < octreeRootNum * 8; i++){
+        if (torch::sum(torch::abs(level1.index({i, at::indexing::Slice(at::indexing::None, 5 * 5 * 5)}))).item().toFloat() > 0.1){
+            break;
+        }
+        at::Tensor l1_out_with_pc = torch::zeros({level1.size(1) + 2});
+        l1_out_with_pc[0] = i % 8 ; // Children index
+        l1_out_with_pc[1] = i / 8;
+        l1_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, level1.index({i}));
+        level1_out.push_back(l1_out_with_pc);
+    }
+
+    for (int i = 0; i < octreeRootNum * 8 * 8; i++){
+        if (torch::sum(torch::abs(level2.index({i, at::indexing::Slice(at::indexing::None, 5 * 5 * 5)}))).item().toFloat() > 0.1){
+            break;
+        }
+        at::Tensor l2_out_with_pc = torch::zeros({level2.size(1) + 2});
+        l2_out_with_pc[0] = i % 8 ; // Children index
+        l2_out_with_pc[1] = i / 8;
+        l2_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, level2.index({i}));
+        level2_out.push_back(l2_out_with_pc);
+    }
+
+    float length0f = static_cast<float>(level0_out.size());
+    float length1f = static_cast<float>(level1_out.size());
+    float length2f = static_cast<float>(level2_out.size());
+    file.write(reinterpret_cast<const char*>(&length0f), sizeof(float));
+    file.write(reinterpret_cast<const char*>(&length1f), sizeof(float));
+    file.write(reinterpret_cast<const char*>(&length2f), sizeof(float));
+
+    for (auto &t: level0_out){
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level0.size(1) + 2));
+    }
+    for (auto &t: level1_out){
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level1.size(1) + 2));
+    }
+    for (auto &t: level2_out){
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level2.size(1) + 2));
+    }
+
+    file.close();
 }
 
 
@@ -153,4 +248,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("load", &readAndConstruct, "Read binary and construct tree tensors");
   m.def("max_voxel_length", &getMaximumVoxelLength,
         "Get the maximum root voxel length for normalization.");
+  m.def("dump_to_bin", &dumpToBin,
+        "Dump vectors to the form of binary files.");
+  m.def("deduce_position_from_sample", &deducePositionFromSample,
+        "Deduce position from samples.");
 }
