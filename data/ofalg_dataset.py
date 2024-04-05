@@ -1,3 +1,4 @@
+import json
 import glob
 import os
 
@@ -18,7 +19,14 @@ class OFLAGDataset(Dataset):
         self._unit_length1 = unit_length_list[1]
         self._unit_length2 = unit_length_list[2]
 
-        self._max_voxel_len = load_utils.max_voxel_length(data_root, self._unit_length0)
+        max_voxel_len_path = os.path.join(data_root, "max_voxel_len.json")
+        if not os.path.isfile(max_voxel_len_path):
+            self._max_voxel_len = load_utils.max_voxel_length(data_root, self._unit_length0)
+            with open(max_voxel_len_path, "w") as f:
+                json.dump(self._max_voxel_len, f)
+        else:
+            with open(max_voxel_len_path, "r") as f:
+                self._max_voxel_len = json.load(f)
         self.file_paths = glob.glob(os.path.join(data_root, "*.bin"))
 
     def __len__(self):
