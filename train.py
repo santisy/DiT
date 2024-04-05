@@ -126,7 +126,7 @@ def main(args):
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
     # Load config
-    with open(args.config_file, "w") as f:
+    with open(args.config_file, "r") as f:
         yaml = YAML()
         config = edict(yaml.load(f))
 

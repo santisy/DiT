@@ -2,6 +2,7 @@
 // Dingdong Yang, 04/01/2023
 //
 
+#include <regex>
 #include <cfloat>
 #include <cstring>
 #include <filesystem>
