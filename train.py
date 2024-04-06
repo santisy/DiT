@@ -166,6 +166,8 @@ def main(args):
 
     # Temp variables
     in_ch = dataset.get_level_vec_len(level_num)
+    num_heads = config.model.num_heads
+    hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
 
     # Create model:
     model = DiT(
@@ -175,10 +177,10 @@ def main(args):
         condition_node_num=dataset.get_condition_num(level_num),
         condition_node_dim=dataset.get_condition_dim(level_num),
         # Network itself related
-        hidden_size=in_ch * 4, # 4 times rule
+        hidden_size=hidden_size, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,
         depth=config.model.depth,
-        num_heads=config.model.num_heads,
+        num_heads=num_heads,
         # Other flags
         add_inject=config.model.add_inject,
         aligned_gen=True if level_num != 0 else False
