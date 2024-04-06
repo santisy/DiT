@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:v100l:1
-#SBATCH --job-name="level0"
+#SBATCH --job-name="test02"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # list out some useful information (optional)
@@ -26,6 +26,7 @@ source ~/th/bin/activate
 MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
 MASTER_PORT=23512
 
+# Copy data to local
 WORK_DIR=$(pwd)
 DATA_ZIP_PATH=/home/dya62/scratch/datasets/shapenet_airplane.zip
 DATA_ZIP_FILE=$(basename ${DATA_ZIP_PATH})
@@ -40,10 +41,11 @@ torchrun \
     --nproc_per_node=1 \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train.py --exp-id test_exp \
+train.py --exp-id test_exp_02 \
     --epoch 100 \
     --global-batch-size 64 \
     --config-file configs/OFALG_config.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane \
+    --num-workers 24 \
     --work-on-tmp-dir \
-    --level_num 0
+    --level-num 0
