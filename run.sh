@@ -48,4 +48,5 @@ train.py --exp-id test_exp_02 \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane \
     --num-workers 24 \
     --work-on-tmp-dir \
+    --ckpt-every 20000 \
     --level-num 0
