@@ -27,7 +27,9 @@ class OFLAGDataset(Dataset):
         else:
             with open(max_voxel_len_path, "r") as f:
                 self._max_voxel_len = json.load(f)
-        self.file_paths = glob.glob(os.path.join(data_root, "*.bin"))
+        file_paths = glob.glob(os.path.join(data_root, "*.bin"))
+        file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
+        self.file_paths = file_paths
 
     def __len__(self):
         return len(self.file_paths)
@@ -95,7 +97,7 @@ class OFLAGDataset(Dataset):
                               self._unit_length1,
                               self._unit_length2)
 
-        assert level0_tensor.size(0) == self._octree_root_num, f"{file_path}: octree root num is {level0_tensor.size(0)}"
+        assert level0_tensor.size(0) == self._octree_root_num 
 
 
         level0_vec_len = self.get_level_vec_len(0)
