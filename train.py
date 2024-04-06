@@ -168,6 +168,7 @@ def main(args):
     in_ch = dataset.get_level_vec_len(level_num)
     num_heads = config.model.num_heads
     hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
+    depth = int(config.model.depth * (1.0 + 0.5 * level_num))
 
     # Create model:
     model = DiT(
@@ -179,7 +180,7 @@ def main(args):
         # Network itself related
         hidden_size=hidden_size, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,
-        depth=config.model.depth,
+        depth=depth,
         num_heads=num_heads,
         # Other flags
         add_inject=config.model.add_inject,

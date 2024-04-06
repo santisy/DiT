@@ -17,6 +17,7 @@ from models import DiT_models
 from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 from models import DiT
+import numpy as np
 
 import argparse
 from data.ofalg_dataset import OFLAGDataset
@@ -43,7 +44,10 @@ def main(args):
 
     model_list = []
     for l in range(3):
-        in_ch = dataset.get_level_vec_len(i)
+        in_ch = dataset.get_level_vec_len(l)
+        num_heads = config.model.num_heads
+        hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
+        depth = int(config.model.depth * (1.0 + 0.5 * l))
         # Create model:
         model = DiT(
             # Data related
@@ -52,9 +56,9 @@ def main(args):
             condition_node_num=dataset.get_condition_num(l),
             condition_node_dim=dataset.get_condition_dim(l),
             # Network itself related
-            hidden_size=in_ch * 4, # 4 times rule
+            hidden_size=hidden_size, # 4 times rule
             mlp_ratio=config.model.mlp_ratio,
-            depth=config.model.depth,
+            depth=depth,
             num_heads=config.model.num_heads,
             # Other flags
             add_inject=config.model.add_inject,
