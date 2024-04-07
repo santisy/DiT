@@ -1,6 +1,6 @@
 import torch
 
-def fourier_positional_encoding(locations, out_features):
+def fourier_positional_encoding(locations: torch.Tensor, out_features):
     """
         Apply Fourier positional encoding to 3D locations with automatic frequency band calculation
         and optional zero-padding to match out_features.
@@ -12,6 +12,7 @@ def fourier_positional_encoding(locations, out_features):
         Returns:
         - Tensor of shape [N, L_i, C] with Fourier positional encoding applied.
     """
+    device = locations.device
     N, L_i, _ = locations.shape
     
     # Calculate num_freqs based on the desired output size (out_features)
@@ -21,15 +22,15 @@ def fourier_positional_encoding(locations, out_features):
     freq_bands = 2.0 ** torch.arange(num_freqs)
     
     # Prepare frequency bands for broadcasting
-    freq_bands = freq_bands.view(1, 1, 1, -1)
+    freq_bands = freq_bands.view(1, 1, 1, -1).to(device)
     
     # Expand locations for multiplication with freq_bands
     locations_expanded = locations.unsqueeze(-1)
     
     # Scale locations by frequencies and apply sin and cos
     scaled_locations = locations_expanded * freq_bands
-    sin_features = torch.sin(scaled_locations)
-    cos_features = torch.cos(scaled_locations)
+    sin_features = torch.sin(scaled_locations).to(device)
+    cos_features = torch.cos(scaled_locations).to(device)
     
     # Concatenate and reshape to [N, L_i, num_freqs * 6]
     encoded = torch.cat([sin_features, cos_features], dim=-1).reshape(N, L_i, -1)
