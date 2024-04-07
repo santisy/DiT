@@ -1,7 +1,7 @@
 model:
     depth: 12
     mlp_ratio: 2.0
-    cross_layers: [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]
+    cross_layers: [3, 7, 11, 15, 19, 23]
     num_heads: 8
     add_inject: false
 

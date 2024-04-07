@@ -214,7 +214,7 @@ def main(args):
         batch_size=int(args.global_batch_size // dist.get_world_size()),
         shuffle=False,
         sampler=sampler,
-        num_workers=args.num_workers,
+        num_workers=int(args.num_workers // dist.get_world_size()),
         pin_memory=True,
         prefetch_factor=2,
         drop_last=True
