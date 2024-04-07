@@ -45,7 +45,6 @@ class PreviousNodeEmbedder(nn.Module):
             )
 
     def forward(self, nodes: List[torch.Tensor], PEs: List[torch.Tensor]):
-        # TODO: Positional embedding comes from the data loader
         embedded_out = []
         for n, pe, mlp in zip(nodes, PEs, self.mlp_list):
             embedded_out.append(mlp(n) + pe)

@@ -16,7 +16,7 @@ def fourier_positional_encoding(locations: torch.Tensor, out_features):
     N, L_i, _ = locations.shape
     
     # Calculate num_freqs based on the desired output size (out_features)
-    omega = torch.arange(out_features // 6)  # Each frequency generates 6 features (3 dimensions * sin and cos)
+    omega = torch.arange(out_features // 6, dtype=torch.float32)  # Each frequency generates 6 features (3 dimensions * sin and cos)
     omega /= out_features / 6
     
     # Generate frequency bands
