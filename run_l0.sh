@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:v100l:1
-#SBATCH --job-name="l0_0406"
+#SBATCH --job-name="l0_0407"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # list out some useful information (optional)
@@ -21,7 +21,7 @@ source ~/th/bin/activate
 
 # Set master address and port
 MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-MASTER_PORT=23510
+MASTER_PORT=$( echo 2$(($RANDOM % 9000 + 1000)) )
 NPROCS=$( echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l )
 echo "NPROCS=$NPROCS"
 
@@ -40,7 +40,7 @@ torchrun \
     --nproc_per_node=$NPROCS \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train.py --exp-id l0_0406 \
+train.py --exp-id l0_0407 \
     --epoch 100 \
     --global-batch-size 64 \
     --config-file configs/OFALG_config.yaml \
