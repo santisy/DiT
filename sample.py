@@ -47,7 +47,11 @@ def main(args):
         in_ch = dataset.get_level_vec_len(l)
         num_heads = config.model.num_heads
         hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
-        depth = int(config.model.depth * (1.0 + 0.5 * l))
+        depth = config.model.depth
+        if l == 1:
+            hidden_size = hidden_size * 3
+        if l == 2:
+            hidden_size = hidden_size * 2
         # Create model:
         model = DiT(
             # Data related
