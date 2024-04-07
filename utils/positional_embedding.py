@@ -16,19 +16,20 @@ def fourier_positional_encoding(locations: torch.Tensor, out_features):
     N, L_i, _ = locations.shape
     
     # Calculate num_freqs based on the desired output size (out_features)
-    num_freqs = out_features // 6  # Each frequency generates 6 features (3 dimensions * sin and cos)
+    omega = torch.arange(out_features // 6)  # Each frequency generates 6 features (3 dimensions * sin and cos)
+    omega /= out_features / 6
     
     # Generate frequency bands
-    freq_bands = 2.0 ** torch.arange(num_freqs)
+    omega = 1. / 10000 ** omega
     
     # Prepare frequency bands for broadcasting
-    freq_bands = freq_bands.view(1, 1, 1, -1).to(device)
+    omega = omega.view(1, 1, 1, -1).to(device)
     
     # Expand locations for multiplication with freq_bands
     locations_expanded = locations.unsqueeze(-1)
     
     # Scale locations by frequencies and apply sin and cos
-    scaled_locations = locations_expanded * freq_bands
+    scaled_locations = locations_expanded * omega
     sin_features = torch.sin(scaled_locations).to(device)
     cos_features = torch.cos(scaled_locations).to(device)
     
