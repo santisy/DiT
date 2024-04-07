@@ -302,8 +302,8 @@ class DiT(nn.Module):
         aligned_gen=False
     ):
         super().__init__()
-        #if aligned_gen:
-        #    hidden_size = hidden_size * 8
+        if aligned_gen:
+            hidden_size = hidden_size * 2
         self.hidden_size = hidden_size
 
         self.sibling_num = sibling_num = 8 # Octree
