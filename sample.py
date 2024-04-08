@@ -92,7 +92,7 @@ def main(args):
                             dataset.get_level_vec_len(l)).to(device)
             model_kwargs = dict(y=None, x0=xc, positions=positions)
             # Sample images:
-            samples = diffusion.p_sample_loop(model.forward,
+            samples = diffusion.p_sample_loop(model_list[l].forward,
                                               z.shape,
                                               z,
                                               model_kwargs=model_kwargs,
@@ -100,7 +100,7 @@ def main(args):
                                               progress=False,
                                               device=device)
             xc.append(samples)
-            # TODO: get the positions from generated
+            # Get the positions and scales from generated
             if l > 0:
                 scale = torch.zeros(batch_size, length).to(device)
                 positions.append(load_utils.deduce_position_from_sample(scales[-1], scale, positions[-1], length))
