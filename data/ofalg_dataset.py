@@ -20,14 +20,24 @@ class OFLAGDataset(Dataset):
         self._unit_length1 = unit_length_list[1]
         self._unit_length2 = unit_length_list[2]
 
-        max_voxel_len_path = os.path.join(data_root, "max_voxel_len.json")
-        if not os.path.isfile(max_voxel_len_path):
+        stats_file = os.path.join(data_root, "stats.json")
+        if not os.path.isfile(stats_file):
             self._max_voxel_len = load_utils.max_voxel_length(data_root, self._unit_length0)
-            with open(max_voxel_len_path, "w") as f:
-                json.dump(self._max_voxel_len, f)
+            self._max_grid_0, self._max_grid_1, self._max_grid_2 = load_utils.get_max_grid_values(data_root, self._unit_length0, self._unit_length1, self._unit_length2)
+            stats_dict = {"max_voxel_len": self._max_voxel_len,
+                          "max_grid_0": self._max_grid_0,
+                          "max_grid_1": self._max_grid_1,
+                          "max_grid_2": self._max_grid_2}
+            with open(stats_file, "w") as f:
+                json.dump(stats_dict, f, indent=2)
         else:
-            with open(max_voxel_len_path, "r") as f:
-                self._max_voxel_len = json.load(f)
+            with open(stats_file, "r") as f:
+                stats_dict = json.load(f)
+            self._max_voxel_len = stats_dict["max_voxel_len"]
+            self._max_grid_0 = stats_dict["max_grid_0"]
+            self._max_grid_1 = stats_dict["max_grid_1"]
+            self._max_grid_2 = stats_dict["max_grid_2"]
+
         file_paths = glob.glob(os.path.join(data_root, "*.bin"))
         if not only_infer:
             file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
@@ -79,12 +89,15 @@ class OFLAGDataset(Dataset):
         # Normalize grids
         vec_len = self.get_level_vec_len(level_num)
         if level_num == 0:
-            x[:, :7 ** 3] *= 0.1
+            x[:, :7 ** 3] *= self._max_grid_0
             x[:, vec_len - 7] = (x[:, vec_len - 7] + 1.0) / 2.0
             x[:, vec_len - 7] *= self._max_voxel_len
             x[:, vec_len - 6:vec_len - 3] = (x[:, vec_len - 6:vec_len - 3] + 1.0) / 2.0
         else:
-            x[:, :5 ** 3] *= 0.1
+            if level_num == 1:
+                x[:, :5 ** 3] *= self._max_grid_1
+            elif level_num == 2:
+                x[:, :5 ** 3] *= self._max_grid_2
             x[:, vec_len - 3:] = (x[:, vec_len - 3:] + 1.0) / 2.0
 
         return x
@@ -108,9 +121,9 @@ class OFLAGDataset(Dataset):
 
         # Make sure normalize everything about to [-1.0, 1.0]
         # Normalize grids
-        level0_tensor[:, :7 ** 3] /= 0.1
-        level1_tensor[:, :5 ** 3] /= 0.1
-        level2_tensor[:, :5 ** 3] /= 0.1
+        level0_tensor[:, :7 ** 3] /= self._max_grid_0
+        level1_tensor[:, :5 ** 3] /= self._max_grid_1
+        level2_tensor[:, :5 ** 3] /= self._max_grid_2
         # Normalize absolute voxel lengths at level 0 (tree root level)
         level0_tensor[:, level0_vec_len - 7] /= self._max_voxel_len
         level0_tensor[:, level0_vec_len - 7] = level0_tensor[:, level0_vec_len - 7] * 2.0 - 1.0

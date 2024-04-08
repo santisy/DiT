@@ -2,6 +2,7 @@
 // Dingdong Yang, 04/01/2023
 //
 
+#include <algorithm>
 #include <regex>
 #include <cfloat>
 #include <cstring>
@@ -55,6 +56,57 @@ float getMaximumVoxelLength(std::string dataRoot, const int level0UnitLength = 3
         file.close();
     }
     return maxVL;
+}
+
+std::vector<float> getMaximumGridValues(std::string dataRoot,
+                           const int level0UnitLength = 361,
+                           const int level1UnitLength = 139,
+                           const int level2UnitLength = 139){
+    std::vector<std::string> allDataPaths = simpleGlob(dataRoot, ".*\\.bin");
+    float maxGrid0 = 0.f;
+    float maxGrid1 = 0.f;
+    float maxGrid2 = 0.f;
+
+    for (auto &path: allDataPaths){
+        std::ifstream file(path, std::ios::in | std::ios::binary);
+        float octreeRootNumFloat;
+        file.read(reinterpret_cast<char*>(&octreeRootNumFloat), sizeof(float));
+        int octreeRootNum = static_cast<int>(octreeRootNumFloat);
+        float length0f, length1f, length2f;
+        file.read(reinterpret_cast<char*>(&length0f), sizeof(float));
+        int length0 = static_cast<int>(length0f);
+        file.read(reinterpret_cast<char*>(&length1f), sizeof(float));
+        int length1 = static_cast<int>(length1f);
+        file.read(reinterpret_cast<char*>(&length2f), sizeof(float));
+        int length2 = static_cast<int>(length2f);
+
+        for (int i = 0; i < length0; i++){
+            auto data = new float[level0UnitLength];
+            file.read(reinterpret_cast<char*>(data), sizeof(float) * level0UnitLength);
+            auto maxPointer = std::max_element(data + 2, data + 2 + 7 * 7 * 7, [](float a, float b) { return std::abs(a) < std::abs(b); });
+            maxGrid0 = std::max(maxGrid0, *maxPointer);
+            delete[] data;
+        }
+
+        for (int i = 0; i < length1; i++){
+            auto data = new float[level1UnitLength];
+            file.read(reinterpret_cast<char*>(data), sizeof(float) * level1UnitLength);
+            auto maxPointer = std::max_element(data + 2, data + 2 + 5 * 5 * 5, [](float a, float b) { return std::abs(a) < std::abs(b); });
+            maxGrid1 = std::max(maxGrid1, *maxPointer);
+            delete[] data;
+        }
+
+        for (int i = 0; i < length2; i++){
+            auto data = new float[level2UnitLength];
+            file.read(reinterpret_cast<char*>(data), sizeof(float) * level2UnitLength);
+            auto maxPointer = std::max_element(data + 2, data + 2 + 5 * 5 * 5, [](float a, float b) { return std::abs(a) < std::abs(b); });
+            maxGrid2 = std::max(maxGrid2, *maxPointer);
+            delete[] data;
+        }
+
+        file.close();
+    }
+    return {maxGrid0, maxGrid1, maxGrid2};
 }
 
 void loadFromFile(std::ifstream& file,
@@ -253,4 +305,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Dump vectors to the form of binary files.");
   m.def("deduce_position_from_sample", &deducePositionFromSample,
         "Deduce position from samples.");
+  m.def("get_max_grid_values", &getMaximumGridValues,
+        "Get maximum grid values."); 
 }
