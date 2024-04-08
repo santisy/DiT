@@ -101,7 +101,7 @@ def main(args):
             xc.append(samples)
             # TODO: get the positions from generated
             if l > 0:
-                scale = torch.zeros(batch_size, length, 3).to(device)
+                scale = torch.zeros(batch_size, length).to(device)
                 positions.append(load_utils.deduce_position_from_sample(scales[-1], scale, positions[-1], length))
                 scales.append(scale)
             else:

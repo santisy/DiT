@@ -192,8 +192,8 @@ void dumpToBin(std::string outPath,
     std::vector<at::Tensor> level2_out;
 
     for (int i = 0; i < octreeRootNum; i++){
-        if (torch::sum(torch::abs(level0.index({i, at::indexing::Slice(at::indexing::None, 7 * 7 *7)}))).item().toFloat() > 0.1){
-            break;
+        if (torch::sum(torch::abs(level0.index({i, at::indexing::Slice(-16, -10)}))).item().toFloat() < 1.0f){
+            continue;
         }
         at::Tensor l0_out_with_pc = torch::zeros({level0.size(1) + 2});
         l0_out_with_pc[0] = i; // Children index
@@ -203,8 +203,8 @@ void dumpToBin(std::string outPath,
     }
 
     for (int i = 0; i < octreeRootNum * 8; i++){
-        if (torch::sum(torch::abs(level1.index({i, at::indexing::Slice(at::indexing::None, 5 * 5 * 5)}))).item().toFloat() > 0.1){
-            break;
+        if (torch::sum(torch::abs(level1.index({i, at::indexing::Slice(-12, -6)}))).item().toFloat() < 1.0f){
+            continue;
         }
         at::Tensor l1_out_with_pc = torch::zeros({level1.size(1) + 2});
         l1_out_with_pc[0] = i % 8 ; // Children index
@@ -214,8 +214,8 @@ void dumpToBin(std::string outPath,
     }
 
     for (int i = 0; i < octreeRootNum * 8 * 8; i++){
-        if (torch::sum(torch::abs(level2.index({i, at::indexing::Slice(at::indexing::None, 5 * 5 * 5)}))).item().toFloat() > 0.1){
-            break;
+        if (torch::sum(torch::abs(level2.index({i, at::indexing::Slice(-12, -6)}))).item().toFloat() < 1.0f){
+            continue;
         }
         at::Tensor l2_out_with_pc = torch::zeros({level2.size(1) + 2});
         l2_out_with_pc[0] = i % 8 ; // Children index
