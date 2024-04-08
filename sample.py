@@ -70,6 +70,7 @@ def main(args):
         ).to(device)
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
+        print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         state_dict = find_model(ckpt_path)
         model.load_state_dict(state_dict)
         model.eval()  # important!
@@ -88,7 +89,7 @@ def main(args):
             length = int(dataset.octree_root_num * 8 ** l)
             z = torch.randn(batch_size,
                             length, 
-                            dataset.get_level_vec_len(l))
+                            dataset.get_level_vec_len(l)).to(device)
             model_kwargs = dict(y=None, x0=xc, positions=positions)
             # Sample images:
             samples = diffusion.p_sample_loop(model.forward,
