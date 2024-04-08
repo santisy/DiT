@@ -110,10 +110,10 @@ def main(args):
                 positions.append(samples[:, :, -3:].clone())
 
         # Denormalize and dump
-        for j, (x0, x1, x2) in enumerate(zip(xc)):
-            x0 = dataset.denormalize(x0, 0).detach().cpu()
-            x1 = dataset.denormalize(x1, 1).detach().cpu()
-            x2 = dataset.denormalize(x2, 2).detach().cpu()
+        for j in range(batch_size):
+            x0 = dataset.denormalize(xc[0][j], 0).detach().cpu()
+            x1 = dataset.denormalize(xc[1][j], 1).detach().cpu()
+            x2 = dataset.denormalize(xc[2][j], 2).detach().cpu()
             load_utils.dump_to_bin(os.path.join(out_dir, f"out_{j + i * batch_size:04d}.bin"),
                                    x0, x1, x2, dataset.octree_root_num)
 
