@@ -11,6 +11,7 @@ class OFLAGDataset(Dataset):
                  data_root: str,
                  octree_root_num: int=64,
                  unit_length_list = [361, 139, 139],
+                 only_infer=False,
                  ** kwargs):
         super().__init__()
 
@@ -28,7 +29,8 @@ class OFLAGDataset(Dataset):
             with open(max_voxel_len_path, "r") as f:
                 self._max_voxel_len = json.load(f)
         file_paths = glob.glob(os.path.join(data_root, "*.bin"))
-        file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
+        if not only_infer:
+            file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
         self.file_paths = file_paths
 
     def __len__(self):

@@ -29,13 +29,13 @@ def main(args):
     os.makedirs(args.export_dir, exist_ok=True)
     out_dir = args.export_dir
 
-    # Create dataset. For denormalizing
-    dataset = OFLAGDataset(args.data_root, **config.data)
-
     # Load config
     with open(args.config_file, "r") as f:
         yaml = YAML()
         config = edict(yaml.load(f))
+
+    # Create dataset. For denormalizing
+    dataset = OFLAGDataset(args.data_root, only_infer=True, **config.data)
 
     # Setup PyTorch:
     torch.manual_seed(args.seed)
@@ -123,7 +123,7 @@ if __name__ == "__main__":
                         help="A list of strings that provides three level generation models.")
     parser.add_argument("--export-dir", type=str, required=True)
     parser.add_argument("--config-file", type=str, required=True)
-    parser.add_argument("--data-root", type=str, require=True)
+    parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
     args = parser.parse_args()
