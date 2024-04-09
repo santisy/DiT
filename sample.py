@@ -107,7 +107,7 @@ def main(args):
                 positions.append(load_utils.deduce_position_from_sample(scales[-1], scale, positions[-1], length))
                 scales.append(scale)
             else:
-                scales.append(samples[:, :, -7].clone() * dataset.max_voxel_len)
+                scales.append(dataset.rescale_voxel_len(samples[:, :, -7].clone()))
                 positions.append(samples[:, :, -3:].clone())
 
         # Denormalize and dump
