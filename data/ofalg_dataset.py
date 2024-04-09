@@ -20,14 +20,11 @@ class OFLAGDataset(Dataset):
         self._unit_length1 = unit_length_list[1]
         self._unit_length2 = unit_length_list[2]
 
-        max_voxel_len_path = os.path.join(data_root, "max_voxel_len.json")
-        if not os.path.isfile(max_voxel_len_path):
-            self._max_voxel_len = load_utils.max_voxel_length(data_root, self._unit_length0)
-            with open(max_voxel_len_path, "w") as f:
-                json.dump(self._max_voxel_len, f)
-        else:
-            with open(max_voxel_len_path, "r") as f:
-                self._max_voxel_len = json.load(f)
+        stats_file = os.path.join(data_root, "stats.json")
+        assert os.path.isfile(stats_file)
+        with open(stats_file, "r") as f:
+            self._stats = json.load(f)
+
         file_paths = glob.glob(os.path.join(data_root, "*.bin"))
         if not only_infer:
             file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
@@ -70,24 +67,58 @@ class OFLAGDataset(Dataset):
     def octree_root_num(self):
         return self._octree_root_num
 
-    @property
-    def max_voxel_len(self):
-        return self._max_voxel_len
+    def rescale_voxel_len(self, x):
+        return x * self._stats["abs_s_0_std"] + self._stats["abs_s_0_mean"]
 
-    def denormalize(self, x, level_num):
-        # Make sure normalize everything about to [-1.0, 1.0]
-        # Normalize grids
-        vec_len = self.get_level_vec_len(level_num)
-        if level_num == 0:
-            x[:, :7 ** 3] *= 0.1
-            x[:, vec_len - 7] = (x[:, vec_len - 7] + 1.0) / 2.0
-            x[:, vec_len - 7] *= self._max_voxel_len
-            x[:, vec_len - 6:vec_len - 3] = (x[:, vec_len - 6:vec_len - 3] + 1.0) / 2.0
+    def denormalize(self, x, l):
+        if l == 0:
+            j = 0
+            x[:, j:j + 7 ** 3] = x[:, j:j + 7 ** 3] * self._stats["grid_0_std"] + self._stats["grid_0_mean"] 
+            j += 7 ** 3
+            x[:, j:j + 6] = x[:, j:j + 6] * self._stats["ori_0_std"] + self._stats["ori_0_mean"]
+            j += 6
+            x[:, j:j + 3] = x[:, j:j + 3] * self._stats["rel_half_s_0_std"] + self._stats["rel_half_s_0_mean"]
+            j += 3
+            x[:, j:j + 1] = x[:, j:j + 1] * self._stats["abs_s_0_std"] + self._stats["abs_s_0_mean"]
+            j += 1
+            x[:, j:j + 3] = x[:, j:j + 3] * self._stats["rel_p_0_std"] + self._stats["rel_p_0_mean"]
+            j += 3
+            x[:, j:j + 3] = x[:, j:j + 3] * self._stats["abs_p_0_std"] + self._stats["abs_p_0_mean"]
         else:
-            x[:, :5 ** 3] *= 0.1
-            x[:, vec_len - 3:] = (x[:, vec_len - 3:] + 1.0) / 2.0
+            j = 0
+            x[:, j:j + 5 ** 3] = x[:, j:j + 5 ** 3] * self._stats[f"grid_{l}_std"] + self._stats[f"grid_{l}_mean"]
+            j += 5 ** 3
+            x[:, j:j + 6] = x[:, j:j + 6] * self._stats[f"ori_{l}_std"] + self._stats[f"ori_{l}_mean"]
+            j += 6
+            x[:, j:j + 3] = x[:, j:j + 3] * self._stats[f"rel_half_s_{l}_std"] + self._stats[f"rel_half_s_{l}_mean"]
+            j += 3
+            x[:, j:j + 3] = x[:, j:j + 3] * self._stats[f"rel_p_{l}_std"] + self._stats[f"rel_p_{l}_mean"]
 
         return x
+
+    def normalize(self, x, l):
+        if l == 0:
+            j = 0
+            x[:, j:j + 7 ** 3] = (x[:, j:j + 7 ** 3] - self._stats["grid_0_mean"]) / self._stats["grid_0_std"]
+            j += 7 ** 3
+            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats["ori_0_mean"]) / self._stats["ori_0_std"]
+            j += 6
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["rel_half_s_0_mean"]) / self._stats["rel_half_s_0_std"]
+            j += 3
+            x[:, j:j + 1] = (x[:, j:j + 1] - self._stats["abs_s_0_mean"]) / self._stats["abs_s_0_std"]
+            j += 1
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["rel_p_0_mean"]) / self._stats["rel_p_0_std"]
+            j += 3
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["abs_p_0_mean"]) / self._stats["abs_p_0_std"]
+        else:
+            j = 0
+            x[:, j:j + 5 ** 3] = (x[:, j:j + 5 ** 3] - self._stats[f"grid_{l}_mean"]) / self._stats[f"grid_{l}_std"]
+            j += 5 ** 3
+            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats[f"ori_{l}_mean"]) / self._stats[f"ori_{l}_std"]
+            j += 6
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_half_s_{l}_mean"]) / self._stats[f"rel_half_s_{l}_std"]
+            j += 3
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_p_{l}_mean"]) / self._stats[f"rel_p_{l}_std"]
 
 
     def __getitem__(self, idx):
@@ -102,22 +133,9 @@ class OFLAGDataset(Dataset):
         assert level0_tensor.size(0) == self._octree_root_num 
 
 
-        level0_vec_len = self.get_level_vec_len(0)
-        level1_vec_len = self.get_level_vec_len(1)
-        level2_vec_len = self.get_level_vec_len(2)
-
-        # Make sure normalize everything about to [-1.0, 1.0]
-        # Normalize grids
-        level0_tensor[:, :7 ** 3] /= 0.1
-        level1_tensor[:, :5 ** 3] /= 0.1
-        level2_tensor[:, :5 ** 3] /= 0.1
-        # Normalize absolute voxel lengths at level 0 (tree root level)
-        level0_tensor[:, level0_vec_len - 7] /= self._max_voxel_len
-        level0_tensor[:, level0_vec_len - 7] = level0_tensor[:, level0_vec_len - 7] * 2.0 - 1.0
-        # Normalize relative scales
-        level0_tensor[:, level0_vec_len - 6:level0_vec_len - 3] = level0_tensor[:, level0_vec_len - 6:level0_vec_len - 3] * 2.0 - 1.0
-        level1_tensor[:, level1_vec_len - 3:] = level1_tensor[:, level1_vec_len - 3:] * 2.0 - 1.0
-        level2_tensor[:, level2_vec_len - 3:] = level2_tensor[:, level2_vec_len - 3:] * 2.0 - 1.0
+        self.normalize(level0_tensor, 0)
+        self.normalize(level1_tensor, 1)
+        self.normalize(level2_tensor, 2)
 
         # Dummy label
         label = -1
