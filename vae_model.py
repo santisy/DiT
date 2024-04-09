@@ -37,9 +37,10 @@ class VAE(nn.Module):
 
 # Loss function
 def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
-    recon = F.mse_loss(recon_x, x)
+    b = x.size(0) * x.size(1)
+    recon = F.mse_loss(recon_x, x, reduction="sum") / b
     # KL divergence
-    KLD = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
+    KLD = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
     return recon + KLD * kl_weight
 
 if __name__ == "__main__":
