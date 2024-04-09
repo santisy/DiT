@@ -40,7 +40,7 @@ torchrun \
     --nproc_per_node=$NPROCS \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train.py --exp-id vae_0409 \
+train_vae.py --exp-id vae_0409 \
     --epoch 200 \
     --global-batch-size 32 \
     --config-file configs/OFALG_config.yaml \
