@@ -323,6 +323,10 @@ class DiT(nn.Module):
         # This is to patchify images from NCHW -> NLC
         # We will not use in our fully tokenized transformer case
         self.t_embedder = TimestepEmbedder(hidden_size)
+        # Augmentation level embedder
+        self.a_embedder = nn.ModuleList()
+        for _ in range(len(condition_node_num)):
+            self.a_embedder.append(TimestepEmbedder(hidden_size))
         if num_classes > 0:
             self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         else:
@@ -381,6 +385,9 @@ class DiT(nn.Module):
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
         nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
+        for a_embedder in self.a_embedder:
+            nn.init.normal_(a_embedder.mlp[0].weight, std=0.02)
+            nn.init.normal_(a_embedder.mlp[2].weight, std=0.02)
 
         # IntiaLize node embedder
         for mlp in self.n_embedder.mlp_list:
@@ -396,15 +403,24 @@ class DiT(nn.Module):
                     nn.init.constant_(adaMM[-1].weight, 0)
                     nn.init.constant_(adaMM[-1].bias, 0)
 
-    def forward(self, x, t, y, x0, positions):
+    def forward(self, x, t, a, y, x0, positions):
         """
             Forward pass of DiT.
             x: (N, L, C) tensor of spatial inputs (images or latent representations of images)
             t: (N,) tensor of diffusion timesteps
+            a: **List** of (N,) augmentation level embedder
             y: (N,) tensor of class labels
             x0: **LIST** of (N, L0, C0) previous levels of nodes
             positions: **LIST** of (N, L0, 3) positional embeddings
         """
+
+        # Variance preserving noising x0, and positions
+        batch_size = x.size(0)
+        for i, a_ in enumerate(a):
+            a_ = a_.reshape([batch_size, 1, 1])
+            x0[i] = torch.sqrt(1 - a_) * x0[i] + torch.sqrt(a_) * torch.randn_like(x0[i])
+            positions[i] = torch.sqrt(1 - a_) * positions[i] + torch.sqrt(a_) * torch.randn_like(positions[i])
+            
 
         PEs = []
         for pos in positions:
@@ -413,11 +429,14 @@ class DiT(nn.Module):
         # Embed conditions and timesteps
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding
         t = self.t_embedder(t)                   # (N, D)
+        a_out = []
+        for a_, a_embedder in zip(a, self.a_embedder):
+            a_out.append(a_embedder(a_))
         if self.y_embedder is not None:
             y = self.y_embedder(y, self.training)    # (N, D)
         else:
             y = 0
-        c = t + y                                # (N, D)
+        c = t + y + sum(a_out)                               # (N, D)
 
         x = self.input_layer(x)
         # -1 means using the nearest level GT positions as the positional encoding

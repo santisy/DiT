@@ -90,7 +90,8 @@ def main(args):
             z = torch.randn(batch_size,
                             length, 
                             dataset.get_level_vec_len(l)).to(device)
-            model_kwargs = dict(y=None, x0=xc, positions=positions)
+            a = [torch.zeros(batch_size).to(device) for _ in range(l)]
+            model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
             # Sample images:
             samples = diffusion.p_sample_loop(model_list[l].forward,
                                               z.shape,

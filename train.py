@@ -259,14 +259,17 @@ def main(args):
             elif level_num == 1:
                 x = x1
                 xc = [x0,]
+                a = [torch.rand((x.shape[0],)).to(device),]
                 positions = [p0,]
             elif level_num == 2:
                 x = x2
                 xc = [x0, x1]
+                a = [torch.rand((x.shape[0],)).to(device),
+                     torch.rand((x.shape[0],)).to(device)]
                 positions = [p0, p1]
 
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-            model_kwargs = dict(y=y, x0=xc, positions=positions)
+            model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
