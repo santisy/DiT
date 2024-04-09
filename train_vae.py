@@ -11,6 +11,7 @@ import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+import torch.nn as nn
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -27,8 +28,7 @@ import os
 import shutil
 import json
 
-from models import DiT
-from diffusion import create_diffusion
+from vae_model import VAE, loss_function
 from torch.optim.lr_scheduler import StepLR
 
 from data.ofalg_dataset import OFLAGDataset
@@ -84,7 +84,6 @@ def create_logger(logging_dir):
         logger.addHandler(logging.NullHandler())
     return logger
 
-
 #################################################################################
 #                                  Training Loop                                #
 #################################################################################
@@ -97,9 +96,6 @@ def main(args):
         tmp_dir = os.getenv("SLURM_TMPDIR", "")
     else:
         tmp_dir = ""
-
-    # Which level of tree now is training?
-    level_num = args.level_num
 
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
@@ -129,8 +125,6 @@ def main(args):
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger = create_logger(run_dir)
         logger.info(f"Experiment directory created at {run_dir}")
-        sample_dir = os.path.join(run_dir, "samples")
-        os.makedirs(sample_dir, exist_ok=True)
         # Backup the yaml config file
         shutil.copy(args.config_file, local_dir)
         # Dump the runtime args
@@ -143,43 +137,24 @@ def main(args):
     dataset = OFLAGDataset(args.data_root, **config.data)
 
     # Temp variables
-    in_ch = dataset.get_level_vec_len(level_num)
-    num_heads = config.model.num_heads
-    hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
-    depth = config.model.depth
-    if level_num == 1:
-        hidden_size = hidden_size * 3
-    if level_num == 2:
-        hidden_size = hidden_size * 2
+    model_list = nn.ModuleList()
+    ema_list = nn.ModuleList()
 
-    # Create model:
-    model = DiT(
-        # Data related
-        in_channels=in_ch, # Combine to each children
-        num_classes=config.data.num_classes,
-        condition_node_num=dataset.get_condition_num(level_num),
-        condition_node_dim=dataset.get_condition_dim(level_num),
-        # Network itself related
-        hidden_size=hidden_size, # 4 times rule
-        mlp_ratio=config.model.mlp_ratio,
-        depth=depth,
-        num_heads=num_heads,
-        # Other flags
-        add_inject=config.model.add_inject,
-        aligned_gen=True if level_num != 0 else False
-    )
-    # Note that parameter initialization is done within the DiT constructor
-    ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
-    requires_grad(ema, False)
-    model = DDP(model.to(device), device_ids=[rank])
-    diffusion = create_diffusion(timestep_respacing="",
-                                 **config.diffusion)
+    for l in range(3):
+        in_ch = dataset.get_level_vec_len(l)
+        hidden_size = int(in_ch * 8)
+        model = VAE(8, in_ch, hidden_size, in_ch // 8)
 
-    #vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
-    logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
+        ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
+        requires_grad(ema, False)
+        ema_list.append(ema)
+
+        # Put DDP on this
+        model = DDP(model.to(device), device_ids=[rank])
+        model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    opt = torch.optim.AdamW(model_list.parameters(), lr=1e-4, weight_decay=0)
     if not args.no_lr_decay:
         scheduler = StepLR(opt, step_size=1, gamma=0.999)
 
@@ -204,9 +179,10 @@ def main(args):
     logger.info(f"Dataset contains {len(dataset):}")
 
     # Prepare models for training:
-    update_ema(ema, model.module, decay=0)  # Ensure EMA is initialized with synced weights
-    model.train()  # important! This enables embedding dropout for classifier-free guidance
-    ema.eval()  # EMA model should always be in eval mode
+    for ema, model in zip(ema_list, model_list):
+        update_ema(ema, model.module, decay=0)  # Ensure EMA is initialized with synced weights
+    model_list.train()  # important! This enables embedding dropout for classifier-free guidance
+    ema_list.eval()  # EMA model should always be in eval mode
 
     # Variables for monitoring/logging purposes:
     train_steps = 0
@@ -218,42 +194,26 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x0, x1, x2, p0, p1, p2, y in loader:
+        for x0, x1, x2, _, _, _, _ in loader:
 
             # To device
             x0 = x0.to(device)
             x1 = x1.to(device)
             x2 = x2.to(device)
-            p0 = p0.to(device)
-            p1 = p1.to(device)
-            p2 = p2.to(device)
-            y = y.to(device)
+            x_list = [x0, x1, x2]
 
-            # According to the level_num set the training target x and the conditions
-            if level_num == 0:
-                x = x0 
-                xc = []
-                positions = []
-            elif level_num == 1:
-                x = x1
-                xc = [x0,]
-                a = [torch.rand((x.shape[0],)).to(device),]
-                positions = [p0,]
-            elif level_num == 2:
-                x = x2
-                xc = [x0, x1]
-                a = [torch.rand((x.shape[0],)).to(device),
-                     torch.rand((x.shape[0],)).to(device)]
-                positions = [p0, p1]
+            loss = 0
 
-            t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-            model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
-            loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
-            loss = loss_dict["loss"].mean()
+            for x, model in zip(x_list, model_list):
+                x_rec, mean, logvar = model(x)
+                loss += loss_function(x_rec, x, mean, logvar)
+
             opt.zero_grad()
             loss.backward()
             opt.step()
-            update_ema(ema, model.module)
+
+            for ema, model in zip(ema_list, model_list):
+                update_ema(ema, model.module)
 
             # Log loss values:
             running_loss += loss.item()
@@ -281,42 +241,17 @@ def main(args):
             if train_steps % args.ckpt_every == 0 and train_steps > 0:
                 if rank == 0:
                     checkpoint = {
-                        "model": model.module.state_dict(),
-                        "ema": ema.state_dict(),
+                        "model": [model.module.state_dict() for model in model_list],
+                        "ema": [ema.state_dict() for ema in ema_list],
                         "opt": opt.state_dict(),
                         "args": args
                     }
-                    checkpoint_path = os.path.join(checkpoint_dir, f"{train_steps:07d}_l{level_num}.pt")
+                    checkpoint_path = os.path.join(checkpoint_dir, f"eva_{train_steps:07d}.pt")
                     torch.save(checkpoint, checkpoint_path)
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
                     if args.work_on_tmp_dir:
                         copy_back_fn(checkpoint_path, local_dir)
                 dist.barrier()
-
-            ## Sample images
-            #if train_steps % args.sample_every == 0 and train_steps > 0:
-            #    if rank == 0:
-            #        z = torch.randn_like(x).to(device)
-            #        model_kwargs = dict(y=y, x0=x0)
-            #        samples = diffusion.p_sample_loop(ema.forward,
-            #                                          z.shape,
-            #                                          z,
-            #                                          model_kwargs=model_kwargs,
-            #                                          clip_denoised=False,
-            #                                          progress=False,
-            #                                          device=device)
-            #        data0 = ((x0 + 1.0) / 2.0).detach().cpu().numpy()
-            #        data0 = np.clip(data0, 0.0, 1.0)
-            #        data1 = ((samples + 1.0) / 2.0).detach().cpu().numpy()
-            #        data1 = np.clip(data1, 0.0, 1.0)
-            #        for i in range(4): # Sample up to 4 images
-            #            img0, img1 = tree_to_img_mnist(data0[i].flatten(),
-            #                                           data1[i].flatten(),
-            #                                           aligned_gen=config.model.aligned_gen
-            #                                           )
-            #            cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_0.png", img0)
-            #            cv2.imwrite(f"{sample_dir}/{train_steps}_{i}_1.png", img1)
-            #    dist.barrier()
 
         if not args.no_lr_decay:
             scheduler.step()
@@ -345,7 +280,6 @@ if __name__ == "__main__":
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
-    parser.add_argument("--level-num", type=int, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
 
     args = parser.parse_args()
