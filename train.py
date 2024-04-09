@@ -232,6 +232,7 @@ def main(args):
             # According to the level_num set the training target x and the conditions
             if level_num == 0:
                 x = x0 
+                a = []
                 xc = []
                 positions = []
             elif level_num == 1:
