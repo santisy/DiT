@@ -2,17 +2,27 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+class MLPSkip(nn.Module):
+    def __init__(self, hidden_dim):
+        super(MLPSkip, self).__init__()
+        self.layer = nn.Sequential(nn.SiLU(),
+                                   nn.Linear(hidden_dim, hidden_dim),
+                                   nn.LayerNorm(hidden_dim))
+    def forward(self, x):
+        return x + self.layer(x)
+
+
 class VAE(nn.Module):
     def __init__(self, layer_n, input_dim, hidden_dim, latent_dim):
         super(VAE, self).__init__()
         # Encoder
         self.input_fc = nn.Linear(input_dim, hidden_dim)
-        self.fc1 = nn.Sequential(*[x for x in [nn.SiLU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
+        self.fc1 = nn.Sequential(*[MLPSkip(hidden_dim) for _ in range(layer_n)])
         self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
         self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
         # Decoder
         self.fc3 = nn.Linear(latent_dim, hidden_dim)
-        self.fc4 = nn.Sequential(*[x for x in [nn.SiLU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
+        self.fc4 = nn.Sequential(*[MLPSkip(hidden_dim) for _ in range(layer_n)])
         self.output_fc = nn.Linear(hidden_dim, input_dim)
 
     def encode(self, x):
