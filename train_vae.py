@@ -157,7 +157,7 @@ def main(args):
         model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model_list.parameters(), lr=1e-4, weight_decay=0)
+    opt = torch.optim.Adam(model_list.parameters(), lr=1e-3)
     if not args.no_lr_decay:
         scheduler = StepLR(opt, step_size=1, gamma=0.999)
 
