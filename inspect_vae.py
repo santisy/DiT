@@ -9,6 +9,7 @@ Inspect and collect statistics of vae encoded
 """
 import os
 import torch
+import torch.nn.functional as F
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 from ruamel.yaml import YAML
@@ -57,24 +58,31 @@ def main(args):
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
         online_variance_list.append(OnlineVariance(latent_dim))
+    vae_model_list.eval()
 
 
     # Go through the whole dataset
     for i in tqdm(range(len(dataset))):
         x0, x1, x2, _, _, _, _ = dataset[i]
-        x0 = x0.to(device)
-        x1 = x1.to(device)
-        x2 = x2.to(device)
+        x0 = x0.unsqueeze(dim=0).to(device)
+        x1 = x1.unsqueeze(dim=0).to(device)
+        x2 = x2.unsqueeze(dim=0).to(device)
         with torch.no_grad():
             #x0_rec, _, _ = vae_model_list[0](x0)
             #x1_rec, _, _ = vae_model_list[1](x1)
-            #x2_rec, _, _ = vae_model_list[1](x2)
+            #x2_rec, _, _ = vae_model_list[2](x2)
+            #loss = F.mse_loss(x0_rec, x0, reduction="sum")/ x0.size(1) + \
+            #       F.mse_loss(x1_rec, x1, reduction="sum")/ x1.size(1) + \
+            #       F.mse_loss(x2_rec, x2, reduction="sum")/ x2.size(1)
+            #print(loss)
+            #import pdb; pdb.set_trace()
+
             latent_0 = vae_model_list[0].encode_and_reparam(x0)
             latent_1 = vae_model_list[1].encode_and_reparam(x1)
-            latent_2 = vae_model_list[1].encode_and_reparam(x2)
-            online_variance_list[0].update(latent_0.detach().cpu())
-            online_variance_list[1].update(latent_1.detach().cpu())
-            online_variance_list[2].update(latent_2.detach().cpu())
+            latent_2 = vae_model_list[2].encode_and_reparam(x2)
+            online_variance_list[0].update(latent_0[0].detach().cpu())
+            online_variance_list[1].update(latent_1[0].detach().cpu())
+            online_variance_list[2].update(latent_2[0].detach().cpu())
 
     # Dump the statistics
     np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),

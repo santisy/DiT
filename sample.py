@@ -8,6 +8,7 @@
 Sample new images from a pre-trained DiT.
 """
 import os
+import torch.nn as nn
 import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -19,6 +20,7 @@ from easydict import EasyDict as edict
 from models import DiT
 import numpy as np
 
+from vae_model import VAE
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
@@ -42,6 +44,31 @@ def main(args):
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # VAE model and stats loading
+    vae_model_list = nn.ModuleList()
+    vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
+    vae_std_loaded = np.load(args.vae_std)
+    vae_std_list = [
+                    torch.from_numpy(vae_std_loaded["std0"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    ]
+
+    for l in range(3):
+        in_ch = dataset.get_level_vec_len(l)
+        hidden_size = int(in_ch * 8)
+        latent_dim = in_ch // config.vae.latent_ratio
+        vae_model = VAE(config.vae.layer_num,
+                        in_ch,
+                        hidden_size,
+                        latent_dim)
+        vae_model.load_state_dict(vae_ckpt["ema"][l])
+        vae_model = vae_model.to(device)
+        vae_model_list.append(vae_model)
+    vae_model_list.eval()
+
+
+    # Model
     model_list = []
     for l in range(3):
         in_ch = dataset.get_level_vec_len(l)
@@ -89,7 +116,7 @@ def main(args):
             length = int(dataset.octree_root_num * 8 ** l)
             z = torch.randn(batch_size,
                             length, 
-                            dataset.get_level_vec_len(l)).to(device)
+                            dataset.get_level_vec_len(l) // config.vae.latent_ratio).to(device)
             a = [torch.zeros(batch_size).to(device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
             # Sample images:
@@ -100,7 +127,15 @@ def main(args):
                                               clip_denoised=False,
                                               progress=False,
                                               device=device)
+
+            # Rescale and decode
+            samples = samples * vae_std_list[l]
+            samples = samples.reshape(batch_size * length, -1)
+            samples = vae_model_list[l].decode(samples)
+            samples = samples.reshape(batch_size, length, -1)
+
             xc.append(samples)
+            #TODO: continue here
             # Get the positions and scales from generated
             if l > 0:
                 scale = torch.zeros(batch_size, length).to(device)
@@ -128,5 +163,7 @@ if __name__ == "__main__":
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
+    parser.add_argument("--vae-ckpt", type=str, required=True)
+    parser.add_argument("--vae-std", type=str, required=True)
     args = parser.parse_args()
     main(args)
