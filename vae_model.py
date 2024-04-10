@@ -3,19 +3,12 @@ from torch import nn
 from torch.nn import functional as F
 import torch.nn.init as init
 
-def initialize_weights(m):
-    if isinstance(m, nn.Linear):
-        # Xavier/Glorot initialization specifically for Linear layers
-        init.xavier_uniform_(m.weight)
-        if m.bias is not None:
-            init.zeros_(m.bias)
-
 class MLPSkip(nn.Module):
     def __init__(self, hidden_dim):
         super(MLPSkip, self).__init__()
         self.layer = nn.Sequential(nn.SiLU(),
                                    nn.Linear(hidden_dim, hidden_dim),
-                                   nn.BatchNorm1d(hidden_dim))
+                                   nn.LayerNorm(hidden_dim))
     def forward(self, x):
         return self.layer(x)
 
@@ -30,8 +23,7 @@ class VAE(nn.Module):
     def __init__(self, layer_n, input_dim, hidden_dim, latent_dim):
         super(VAE, self).__init__()
         # Encoder
-        self.input_fc = nn.Sequential(Reshape(input_dim),
-                                      nn.Linear(input_dim, hidden_dim))
+        self.input_fc = nn.Linear(input_dim, hidden_dim)
 
         self.fc1 = nn.Sequential(*[MLPSkip(hidden_dim) for _ in range(layer_n)])
         self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
@@ -42,16 +34,13 @@ class VAE(nn.Module):
 
         self.output_fc = nn.Linear(hidden_dim, input_dim)
 
-        # Initialize weights
-        self.apply(initialize_weights)
-
     def encode(self, x):
         x = self.input_fc(x)
         h = self.fc1(x)
         return self.fc2_mean(h), self.fc2_logvar(h)
 
     def reparameterize(self, mean, logvar):
-        std = torch.exp(0.5*logvar)
+        std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mean + eps*std
 
@@ -61,16 +50,14 @@ class VAE(nn.Module):
         return self.output_fc(h)
 
     def encode_and_reparam(self, x):
-        B, L, _ = x.shape
         mean, logvar = self.encode(x)
         out = self.reparameterize(mean, logvar)
-        return out.reshape(B, L, -1)
+        return out
         
     def forward(self, x):
-        B, L, _ = x.shape
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
-        return self.decode(z).reshape(B, L, -1), mean.reshape(B, L, -1), logvar.reshape(B, L, -1)
+        return self.decode(z), mean, logvar
 
 # Loss function
 def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
