@@ -48,6 +48,34 @@ def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
     KLD = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
     return recon + KLD * kl_weight
 
+class OnlineVariance(object):
+    def __init__(self, num_features):
+        self.n = 0
+        self.mean = torch.zeros(num_features)
+        self.M2 = torch.zeros(num_features)
+        self.num_features = num_features
+
+    def update(self, batch):
+        # Expect batch to be of shape [N, C]
+        batch_mean = torch.mean(batch, dim=0)
+        batch_count = batch.size(0)
+        
+        if self.n == 0:
+            self.mean = batch_mean
+        else:
+            delta = batch_mean - self.mean
+            self.mean += delta * batch_count / (self.n + batch_count)
+            self.M2 += torch.sum((batch - batch_mean.unsqueeze(0))**2 + (delta**2) * self.n * batch_count / (self.n + batch_count), dim=0)
+        
+        self.n += batch_count
+
+    @property
+    def std(self):
+        if self.n < 2:
+            return float('nan') * torch.ones(self.num_features)  # Return nan if less than 2 samples
+        std = torch.sqrt(self.M2 / (self.n - 1)).detach().cpu().numpy()
+        return std
+
 if __name__ == "__main__":
     vae = VAE(8, 128, 1024, 64)
     input_data = torch.randn(4, 32, 128)
