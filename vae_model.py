@@ -1,37 +1,18 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-import torch.nn.init as init
-
-class MLPSkip(nn.Module):
-    def __init__(self, hidden_dim):
-        super(MLPSkip, self).__init__()
-        self.layer = nn.Sequential(nn.SiLU(),
-                                   nn.Linear(hidden_dim, hidden_dim),
-                                   nn.LayerNorm(hidden_dim))
-    def forward(self, x):
-        return self.layer(x)
-
-class Reshape(nn.Module):
-    def __init__(self, ch):
-        self.ch = ch
-        super(Reshape, self).__init__()
-    def forward(self, x):
-        return x.reshape(-1, self.ch)
 
 class VAE(nn.Module):
     def __init__(self, layer_n, input_dim, hidden_dim, latent_dim):
         super(VAE, self).__init__()
         # Encoder
         self.input_fc = nn.Linear(input_dim, hidden_dim)
-
-        self.fc1 = nn.Sequential(*[MLPSkip(hidden_dim) for _ in range(layer_n)])
+        self.fc1 = nn.Sequential(*[x for x in [nn.SiLU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
         self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
         self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
         # Decoder
         self.fc3 = nn.Linear(latent_dim, hidden_dim)
-        self.fc4 = nn.Sequential(*[MLPSkip(hidden_dim) for _ in range(layer_n)])
-
+        self.fc4 = nn.Sequential(*[x for x in [nn.SiLU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
         self.output_fc = nn.Linear(hidden_dim, input_dim)
 
     def encode(self, x):
@@ -50,14 +31,28 @@ class VAE(nn.Module):
         return self.output_fc(h)
 
     def encode_and_reparam(self, x):
+        B, L, C = x.shape
+        x.reshape(B * L, C)
+
         mean, logvar = self.encode(x)
         out = self.reparameterize(mean, logvar)
+        out = out.reshape(B, L, -1)
+
         return out
         
     def forward(self, x):
+        B, L, C = x.shape
+        x.reshape(B * L, C)
+
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
-        return self.decode(z), mean, logvar
+        out =  self.decode(z)
+
+        out = out.reshape(B, L, C)
+        mean = mean.reshape(B, L, -1)
+        logvar = logvar.reshape(B, L, -1)
+
+        return out, mean, logvar
 
 # Loss function
 def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
