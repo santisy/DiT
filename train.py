@@ -11,6 +11,7 @@ import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+import torch.nn as nn
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -28,6 +29,7 @@ import shutil
 import json
 
 from models import DiT
+from vae_model import VAE
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
 
@@ -144,13 +146,23 @@ def main(args):
 
     # Temp variables
     in_ch = dataset.get_level_vec_len(level_num)
+    in_ch = in_ch // 8 # This is for VAE
     num_heads = config.model.num_heads
     hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
     depth = config.model.depth
-    if level_num == 1:
-        hidden_size = hidden_size * 3
-    if level_num == 2:
-        hidden_size = hidden_size * 2
+    if level_num == 1 or level_num == 2:
+        hidden_size = hidden_size * 8
+
+    # Prepare VAE model
+    vae_model_list = nn.ModuleList()
+    vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
+    for l in range(3):
+        in_ch = dataset.get_level_vec_len(l)
+        hidden_size = int(in_ch * 8)
+        vae_model = VAE(8, in_ch, hidden_size, in_ch // 8)
+        vae_model.load_state_dict(vae_ckpt["ema"][l])
+        vae_model = vae_model.to(device)
+        vae_model_list.append(vae_model)
 
     # Create model:
     model = DiT(
@@ -346,6 +358,7 @@ if __name__ == "__main__":
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
+    parser.add_argument("--vae-ckpt", type=str, required=True)
     parser.add_argument("--level-num", type=int, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
 

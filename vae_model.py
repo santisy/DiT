@@ -17,8 +17,8 @@ class VAE(nn.Module):
 
     def encode(self, x):
         x = self.input_fc(x)
-        h1 = self.fc1(x)
-        return self.fc2_mean(h1), self.fc2_logvar(h1)
+        h = self.fc1(x)
+        return self.fc2_mean(h), self.fc2_logvar(h)
 
     def reparameterize(self, mean, logvar):
         std = torch.exp(0.5*logvar)
@@ -30,6 +30,11 @@ class VAE(nn.Module):
         h = self.fc4(h)
         return self.output_fc(h)
 
+    def encode_and_reparam(self, x):
+        mean, logvar = self.encode(x)
+        out = self.reparameterize(mean, logvar)
+        return out
+        
     def forward(self, x):
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
@@ -38,9 +43,9 @@ class VAE(nn.Module):
 # Loss function
 def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
     b = x.size(0) * x.size(1)
-    recon = F.mse_loss(recon_x, x, reduction="sum") / b
+    recon = torch.abs(recon_x - x).sum() / b
     # KL divergence
-    KLD = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
+    KLD = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
     return recon + KLD * kl_weight
 
 if __name__ == "__main__":

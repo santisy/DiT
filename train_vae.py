@@ -143,7 +143,10 @@ def main(args):
     for l in range(3):
         in_ch = dataset.get_level_vec_len(l)
         hidden_size = int(in_ch * 8)
-        model = VAE(8, in_ch, hidden_size, in_ch // 8)
+        model = VAE(config.vae.layer_num,
+                    in_ch,
+                    hidden_size,
+                    in_ch // config.vae.latent_ratio)
 
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -256,7 +259,7 @@ def main(args):
         if not args.no_lr_decay:
             scheduler.step()
 
-    model.eval()  # important! This disables randomized embedding dropout
+    model_list.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
 
     logger.info("Done!")
