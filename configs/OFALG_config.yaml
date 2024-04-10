@@ -16,4 +16,4 @@ diffusion:
 
 vae:
     latent_ratio: 4
-    layer_num: 12
+    layer_num: 8
