@@ -54,7 +54,7 @@ def main(args):
                         in_ch,
                         hidden_size,
                         latent_dim)
-        vae_model.load_state_dict(vae_ckpt["ema"][l])
+        vae_model.load_state_dict(vae_ckpt["model"][l])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
         online_variance_list.append(OnlineVariance(latent_dim))
