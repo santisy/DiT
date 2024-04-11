@@ -249,7 +249,7 @@ def main(args):
                         "opt": opt.state_dict(),
                         "args": args
                     }
-                    checkpoint_path = os.path.join(checkpoint_dir, f"eva_{train_steps:07d}.pt")
+                    checkpoint_path = os.path.join(checkpoint_dir, f"vae_{train_steps:07d}.pt")
                     torch.save(checkpoint, checkpoint_path)
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
                     if args.work_on_tmp_dir:
