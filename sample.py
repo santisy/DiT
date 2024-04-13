@@ -72,20 +72,21 @@ def main(args):
     model_list = []
     for l in range(3):
         in_ch = dataset.get_level_vec_len(l)
+        in_ch = in_ch // config.vae.latent_ratio # This is for VAE
         num_heads = config.model.num_heads
         hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
         depth = config.model.depth
-        if l == 1:
-            hidden_size = hidden_size * 3
-        if l == 2:
-            hidden_size = hidden_size * 2
+        if l == 1 or l == 2:
+            hidden_size = hidden_size * 8
+        condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(l)]
+
         # Create model:
         model = DiT(
             # Data related
             in_channels=in_ch, # Combine to each children
             num_classes=config.data.num_classes,
             condition_node_num=dataset.get_condition_num(l),
-            condition_node_dim=dataset.get_condition_dim(l),
+            condition_node_dim=condition_node_dim,
             # Network itself related
             hidden_size=hidden_size, # 4 times rule
             mlp_ratio=config.model.mlp_ratio,
@@ -98,8 +99,8 @@ def main(args):
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
-        state_dict = find_model(ckpt_path)
-        model.load_state_dict(state_dict)
+        model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
+        model.load_state_dict(model_ckpt["model"])
         model.eval()  # important!
         model_list.append(model)
 
@@ -112,6 +113,7 @@ def main(args):
         xc = []
         positions = []
         scales = []
+        decoded = []
         for l in range(3):
             length = int(dataset.octree_root_num * 8 ** l)
             z = torch.randn(batch_size,
@@ -119,6 +121,7 @@ def main(args):
                             dataset.get_level_vec_len(l) // config.vae.latent_ratio).to(device)
             a = [torch.zeros(batch_size).to(device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
+
             # Sample images:
             samples = diffusion.p_sample_loop(model_list[l].forward,
                                               z.shape,
@@ -128,14 +131,18 @@ def main(args):
                                               progress=False,
                                               device=device)
 
+            # Append the generated latents for the following generation
+            xc.append(samples.clone())
+
             # Rescale and decode
             samples = samples * vae_std_list[l]
             samples = samples.reshape(batch_size * length, -1)
             samples = vae_model_list[l].decode(samples)
             samples = samples.reshape(batch_size, length, -1)
+            decoded.append(samples)
 
-            xc.append(samples)
-            #TODO: continue here
+            #TODO: fix this part. The conitnued training and more is different
+
             # Get the positions and scales from generated
             if l > 0:
                 scale = torch.zeros(batch_size, length).to(device)
@@ -143,13 +150,13 @@ def main(args):
                 scales.append(scale)
             else:
                 scales.append(dataset.rescale_voxel_len(samples[:, :, -7].clone()))
-                positions.append(samples[:, :, -3:].clone())
+                positions.append(dataset.rescale_positions(samples[:, :, -3:].clone()))
 
         # Denormalize and dump
         for j in range(batch_size):
-            x0 = dataset.denormalize(xc[0][j], 0).detach().cpu()
-            x1 = dataset.denormalize(xc[1][j], 1).detach().cpu()
-            x2 = dataset.denormalize(xc[2][j], 2).detach().cpu()
+            x0 = dataset.denormalize(decoded[0][j], 0).detach().cpu()
+            x1 = dataset.denormalize(decoded[1][j], 1).detach().cpu()
+            x2 = dataset.denormalize(decoded[2][j], 2).detach().cpu()
             load_utils.dump_to_bin(os.path.join(out_dir, f"out_{j + i * batch_size:04d}.bin"),
                                    x0, x1, x2, dataset.octree_root_num)
 

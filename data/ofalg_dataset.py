@@ -69,6 +69,9 @@ class OFLAGDataset(Dataset):
 
     def rescale_voxel_len(self, x):
         return x * self._stats["abs_s_0_std"] + self._stats["abs_s_0_mean"]
+    
+    def rescale_positions(self, x):
+        return x * self._stats["abs_p_0_std"] + self._stats["abs_p_0_mean"]
 
     def denormalize(self, x, l):
         if l == 0:
