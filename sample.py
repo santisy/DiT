@@ -141,8 +141,6 @@ def main(args):
             samples = samples.reshape(batch_size, length, -1)
             decoded.append(samples)
 
-            #TODO: fix this part. The conitnued training and more is different
-
             # Get the positions and scales from generated
             if l > 0:
                 scale = torch.zeros(batch_size, length).to(device)

@@ -416,15 +416,20 @@ class DiT(nn.Module):
 
         # Variance preserving noising x0, and positions
         batch_size = x.size(0)
-        for i, a_ in enumerate(a):
+        PEs = []
+        for i, (a_, p_) in enumerate(zip(a, positions)):
             a_ = a_.reshape([batch_size, 1, 1])
             x0[i] = torch.sqrt(1 - a_) * x0[i] + torch.sqrt(a_) * torch.randn_like(x0[i])
-            positions[i] = torch.sqrt(1 - a_) * positions[i] + torch.sqrt(a_) * torch.randn_like(positions[i])
-            
 
-        PEs = []
-        for pos in positions:
-            PEs.append(fourier_positional_encoding(pos, self.hidden_size))
+            pos = np.arange(x0[i].size(1), dtype=np.float32) / x0[i].size(1)
+            PE = torch.from_numpy(
+                get_1d_sincos_pos_embed_from_grid(self.hidden_size, pos)
+                ).unsqueeze(dim=0).clone().to(x.device).float()
+
+            #PE_ = fourier_positional_encoding(p_, self.hidden_size)
+            #positions[i] = torch.sqrt(1 - a_) * positions[i] + torch.sqrt(a_) * torch.randn_like(positions[i])
+            #PE = torch.sqrt(1 - a_) * PE + torch.sqrt(a_) * torch.randn_like(PE)
+            PEs.append(PE)
 
         # Embed conditions and timesteps
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding
@@ -439,7 +444,7 @@ class DiT(nn.Module):
         c = t + y + sum(a_out)                               # (N, D)
 
         x = self.input_layer(x)
-        # -1 means using the nearest level GT positions as the positional encoding
+        ## -1 means using the nearest level GT positions as the positional encoding
         if len(PEs) > 0:
             x = x + PEs[-1]
 

@@ -11,7 +11,7 @@ data:
     unit_length_list: [361, 139, 139]
 
 diffusion:
-    noise_schedule: "cosine"
+    noise_schedule: "xg_linear"
     diffusion_steps: 1000
 
 vae:
