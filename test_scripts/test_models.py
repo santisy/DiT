@@ -16,7 +16,9 @@ model = DiT(in_channels=64,
             cross_layers=[2,3],
             aligned_gen=False,
             add_inject=False,
-            num_classes=-1)
+            num_classes=-1,
+            pos_embedding_version="v2"
+            )
 
 input_x = torch.randn(4, 16, 64)
 cond_x = []
@@ -39,7 +41,9 @@ model = DiT(in_channels=64,
             cross_layers=[2,3],
             aligned_gen=True,
             add_inject=False,
-            num_classes=-1)
+            num_classes=-1,
+            pos_embedding_version="v2"
+            )
 input_x = torch.randn(4, 16, 64)
 a = [torch.rand(4,)]
 cond_x = [torch.randn(4, 2, 32),]
@@ -62,7 +66,9 @@ model = DiT(in_channels=64,
             cross_layers=[2,3],
             aligned_gen=True,
             add_inject=False,
-            num_classes=-1)
+            num_classes=-1,
+            pos_embedding_version="v2"
+            )
 input_x = torch.randn(4, 32, 64)
 cond_x = [torch.randn(4, 2, 32), torch.randn(4, 4, 64)]
 pos_x = [torch.randn(4, 2, 3), torch.randn(4, 4, 3)]

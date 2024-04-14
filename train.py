@@ -190,7 +190,8 @@ def main(args):
         num_heads=num_heads,
         # Other flags
         add_inject=config.model.add_inject,
-        aligned_gen=True if level_num != 0 else False
+        aligned_gen=True if level_num != 0 else False,
+        pos_embedding_version=config.model.get("pos_emedding_version", "v2")
     )
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training

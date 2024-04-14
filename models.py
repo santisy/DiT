@@ -30,10 +30,11 @@ def modulate(x, shift, scale):
 #################################################################################
 
 class PreviousNodeEmbedder(nn.Module):
-    def __init__(self, node_dim: List[int], hidden_size: int):
+    def __init__(self, node_dim: List[int], hidden_size: int, PEV="v1"):
         super().__init__()
 
         self.mlp_list = nn.ModuleList()
+        self.PEV = PEV # Positional embedding version
 
         for nd in node_dim:
             self.mlp_list.append(
@@ -47,7 +48,11 @@ class PreviousNodeEmbedder(nn.Module):
     def forward(self, nodes: List[torch.Tensor], PEs: List[torch.Tensor]):
         embedded_out = []
         for n, pe, mlp in zip(nodes, PEs, self.mlp_list):
-            embedded_out.append(mlp(n) + pe)
+            if self.PEV != "v2":
+                out = mlp(n) + pe
+            else:
+                out = mlp(n)
+            embedded_out.append(out)
         return embedded_out
 
 
@@ -128,23 +133,37 @@ class CrossAttention(nn.Module):
     """
         Cross Attention Layer
     """
-    def __init__(self, hidden_size, num_heads):
+    def __init__(self, hidden_size, num_heads, PEV="v1"):
         super().__init__()
         self.proj_q = nn.Linear(hidden_size, hidden_size, bias=True)
         self.proj_k = nn.Linear(hidden_size, hidden_size, bias=True)
         self.proj_v = nn.Linear(hidden_size, hidden_size, bias=True)
         self.proj_back = nn.Linear(hidden_size, hidden_size, bias=True)
+        self.PEV = PEV
 
         self.multihead_attention = nn.MultiheadAttention(embed_dim=hidden_size,
                                                          num_heads=num_heads,
                                                          batch_first=True)
 
     def forward(self, x, c):
+        if self.PEV == "v2":
+            batch_size = x.size(0)
+            seq_x = x.size(1)
+            seq_c = c.size(1)
+            if seq_x == seq_c:
+                attn_mask = -10 * torch.ones(seq_x, seq_x)
+                attn_mask.fill_diagonal_(0)
+                attn_mask = attn_mask.to(x.device)
+            else:
+                attn_mask = None
+        else:
+            attn_mask = None
+
         q = self.proj_q(x)
         k = self.proj_k(c)
         v = self.proj_v(c)
 
-        attn_out, _ = self.multihead_attention(q, k, v)
+        attn_out, _ = self.multihead_attention(q, k, v, attn_mask=attn_mask)
         attn_out = self.proj_back(attn_out)
 
         return attn_out
@@ -159,11 +178,13 @@ class DiTBlock(nn.Module):
                  cond_num=1,
                  cross_attention=False,
                  add_inject=False,
+                 PEV="v1",
                  **block_kwargs):
         super().__init__()
         self.cross_attention = cross_attention
         self.add_inject = add_inject
         self.cond_num = cond_num
+        self.PEV = PEV
 
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
@@ -180,7 +201,7 @@ class DiTBlock(nn.Module):
                 self.adaLN_modulation_mca_list = nn.ModuleList()
 
                 for _ in range(cond_num):
-                    self.cross_list.append(CrossAttention(hidden_size, num_heads))
+                    self.cross_list.append(CrossAttention(hidden_size, num_heads, PEV=PEV))
                     self.norm0_list.append(nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6))
                     self.norm00_list.append(nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6))
                     self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
@@ -298,7 +319,8 @@ class DiT(nn.Module):
         add_inject=False,
         # ---- optional
         num_classes=1000,
-        aligned_gen=False
+        aligned_gen=False,
+        pos_embedding_version="v1"
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -311,6 +333,7 @@ class DiT(nn.Module):
         self.condition_node_num = condition_node_num
         self.add_inject = add_inject
         self.aligned_gen = aligned_gen
+        self.pos_embedding_version = pos_embedding_version
 
         # Input layer
         if not aligned_gen:
@@ -318,8 +341,7 @@ class DiT(nn.Module):
         else:
             self.input_layer = PackLayer(in_channels, hidden_size, sibling_num)
 
-        self.n_embedder = PreviousNodeEmbedder(condition_node_dim,
-                                               hidden_size)
+        self.n_embedder = PreviousNodeEmbedder(condition_node_dim, hidden_size, PEV=pos_embedding_version)
         # This is to patchify images from NCHW -> NLC
         # We will not use in our fully tokenized transformer case
         self.t_embedder = TimestepEmbedder(hidden_size)
@@ -339,7 +361,9 @@ class DiT(nn.Module):
                               num_heads,
                               mlp_ratio=mlp_ratio,
                               cond_num=len(condition_node_num),
-                              add_inject=add_inject)
+                              add_inject=add_inject,
+                              PEV=self.pos_embedding_version
+                              )
         for i in range(depth):
             if i not in cross_layers:
                 self.blocks.append(block_class())
@@ -421,15 +445,19 @@ class DiT(nn.Module):
             a_ = a_.reshape([batch_size, 1, 1])
             x0[i] = torch.sqrt(1 - a_) * x0[i] + torch.sqrt(a_) * torch.randn_like(x0[i])
 
-            pos = np.arange(x0[i].size(1), dtype=np.float32) / x0[i].size(1)
-            PE = torch.from_numpy(
-                get_1d_sincos_pos_embed_from_grid(self.hidden_size, pos)
-                ).unsqueeze(dim=0).clone().to(x.device).float()
+            if self.pos_embedding_version in ["v0", "v1"]:
+                pos = np.arange(x0[i].size(1), dtype=np.float32) / x0[i].size(1)
+                PE = torch.from_numpy(
+                    get_1d_sincos_pos_embed_from_grid(self.hidden_size, pos)
+                    ).unsqueeze(dim=0).clone().to(x.device).float()
 
-            #PE_ = fourier_positional_encoding(p_, self.hidden_size)
-            #positions[i] = torch.sqrt(1 - a_) * positions[i] + torch.sqrt(a_) * torch.randn_like(positions[i])
-            #PE = torch.sqrt(1 - a_) * PE + torch.sqrt(a_) * torch.randn_like(PE)
-            PEs.append(PE)
+                PE = fourier_positional_encoding(p_, self.hidden_size)
+                #positions[i] = torch.sqrt(1 - a_) * positions[i] + torch.sqrt(a_) * torch.randn_like(positions[i])
+                PE = torch.sqrt(1 - a_) * PE + torch.sqrt(a_) * torch.randn_like(PE)
+
+                PEs.append(PE)
+            else:
+                PEs.append(None)
 
         # Embed conditions and timesteps
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding
@@ -445,7 +473,7 @@ class DiT(nn.Module):
 
         x = self.input_layer(x)
         ## -1 means using the nearest level GT positions as the positional encoding
-        if len(PEs) > 0:
+        if len(PEs) > 0 and self.pos_embedding_version != "v2":
             x = x + PEs[-1]
 
         for block in self.blocks:
