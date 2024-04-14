@@ -95,7 +95,7 @@ def main(args):
             # Other flags
             add_inject=config.model.add_inject,
             aligned_gen=True if l != 0 else False,
-            pos_embedding_version=config.model.get("pos_emedding_version", "v2")
+            pos_embedding_version=config.model.get("pos_emedding_version", "v1")
         ).to(device)
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
