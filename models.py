@@ -228,7 +228,13 @@ class DiTBlock(nn.Module):
                                                           modulate(norm00(x0_), shift_mca0, scale_mca0))
             else:
                 for layer_add, x0_ in zip(self.layer_list_add_inject, x0):
-                    x = x + layer_add(x0_)
+                    x0_ = layer_add(x0_)
+                    seq_0 = x0_.size(1)
+                    seq_x = x.size(1)
+                    if seq_0 == seq_x:
+                        x = x + x0_
+                    else:
+                        x = x + torch.repeat_interleave(x0_, seq_x // seq_0, dim=1)
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
