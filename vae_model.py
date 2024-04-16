@@ -7,12 +7,12 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
         # Encoder
         self.input_fc = nn.Linear(input_dim, hidden_dim)
-        self.fc1 = nn.Sequential(*[x for x in [nn.SiLU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
+        self.fc1 = nn.Sequential(*[x for x in [nn.ReLU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
         self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
         self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
         # Decoder
         self.fc3 = nn.Linear(latent_dim, hidden_dim)
-        self.fc4 = nn.Sequential(*[x for x in [nn.SiLU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
+        self.fc4 = nn.Sequential(*[x for x in [nn.ReLU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
         self.output_fc = nn.Linear(hidden_dim, input_dim)
 
     def encode(self, x):
@@ -32,7 +32,7 @@ class VAE(nn.Module):
 
     def encode_and_reparam(self, x):
         B, L, C = x.shape
-        x.reshape(B * L, C)
+        x = x.reshape(B * L, C)
 
         mean, logvar = self.encode(x)
         out = self.reparameterize(mean, logvar)
@@ -42,7 +42,7 @@ class VAE(nn.Module):
         
     def forward(self, x):
         B, L, C = x.shape
-        x.reshape(B * L, C)
+        x = x.reshape(B * L, C)
 
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
@@ -57,7 +57,7 @@ class VAE(nn.Module):
 # Loss function
 def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
     b = x.size(0) * x.size(1)
-    recon = F.mse_loss(recon_x, x, reduction="sum") / b
+    recon = F.l1_loss(recon_x, x, reduction="sum") / b
     # KL divergence
     KLD = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
     return recon + KLD * kl_weight
