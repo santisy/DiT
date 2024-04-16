@@ -30,7 +30,7 @@ class VAE(nn.Module):
                  ):
         super(VAE, self).__init__()
         self.token_n = token_n
-        self.d_model = d_model = input_dim * 16 // token_n
+        self.d_model = d_model = (input_dim * 32 // token_n // nhead ) * nhead
         self.embed_dim = d_model * token_n
         self.latent_dim = latent_dim
 

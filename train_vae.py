@@ -86,9 +86,11 @@ def create_logger(logging_dir):
 
 
 def random_sample_and_reshape(x, l):
-    indices = torch.randperm(x.size(1))[:l]
-    x = x[:, indices, :]
-    return x.reshape(x.size(0) * x.size(1), -1)
+    out = []
+    for i in range(x.size(0)):
+        indices = torch.randperm(x.size(1))[:l]
+        out.append(x[i, indices, :])
+    return torch.cat(out, dim=0)
     
 #################################################################################
 #                                  Training Loop                                #
@@ -152,7 +154,7 @@ def main(args):
                     in_ch // config.vae.latent_ratio,
                     num_layers=config.vae.layer_num
                     )
-
+        
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
         ema_list.append(ema)
@@ -205,9 +207,9 @@ def main(args):
         for x0, x1, x2, _, _, _, _ in loader:
 
             # To device
-            x0 = random_sample_and_reshape(x0.to(device), 8)
-            x1 = random_sample_and_reshape(x1.to(device), 8)
-            x2 = random_sample_and_reshape(x2.to(device), 8)
+            x0 = random_sample_and_reshape(x0.to(device), 32)
+            x1 = random_sample_and_reshape(x1.to(device), 32)
+            x2 = random_sample_and_reshape(x2.to(device), 32)
             x_list = [x0, x1, x2]
 
             loss = 0
