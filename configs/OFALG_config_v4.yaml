@@ -1,0 +1,16 @@
+model:
+    depth: 16
+    mlp_ratio: 2.0
+    cross_layers: [2, 4, 6, 8, 10, 14]
+    num_heads: 16
+    add_inject: false
+    pos_emedding_version: "v2"
+
+data:
+    num_classes: -1
+    octree_root_num: 64
+    unit_length_list: [361, 139, 139]
+
+diffusion:
+    noise_schedule: "linear"
+    diffusion_steps: 1000

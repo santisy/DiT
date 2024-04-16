@@ -40,7 +40,7 @@ model = DiT(in_channels=64,
             condition_node_num=[2,], 
             cross_layers=[2,3],
             aligned_gen=True,
-            add_inject=False,
+            add_inject=True,
             num_classes=-1,
             pos_embedding_version="v2"
             )
@@ -65,7 +65,7 @@ model = DiT(in_channels=64,
             condition_node_num=[2, 4], 
             cross_layers=[2,3],
             aligned_gen=True,
-            add_inject=False,
+            add_inject=True,
             num_classes=-1,
             pos_embedding_version="v2"
             )

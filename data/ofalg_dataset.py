@@ -68,60 +68,60 @@ class OFLAGDataset(Dataset):
         return self._octree_root_num
 
     def rescale_voxel_len(self, x):
-        return x * self._stats["abs_s_0_std"] + self._stats["abs_s_0_mean"]
+        return x * (self._stats["abs_s_0_max"] - self._stats["abs_s_0_min"]) + self._stats["abs_s_0_min"]
     
     def rescale_positions(self, x):
-        return x * self._stats["abs_p_0_std"] + self._stats["abs_p_0_mean"]
+        return x * (self._stats["abs_p_0_max"] - self._stats["abs_p_0_min"]) + self._stats["abs_p_0_min"]
 
     def denormalize(self, x, l):
         if l == 0:
             j = 0
-            x[:, j:j + 7 ** 3] = x[:, j:j + 7 ** 3] * self._stats["grid_0_std"] + self._stats["grid_0_mean"] 
+            x[:, j:j + 7 ** 3] = x[:, j:j + 7 ** 3] * (self._stats["grid_0_max"] - self._stats["grid_0_min"])  + self._stats["grid_0_min"]
             j += 7 ** 3
-            x[:, j:j + 6] = x[:, j:j + 6] * self._stats["ori_0_std"] + self._stats["ori_0_mean"]
+            x[:, j:j + 6] = x[:, j:j + 6] * (self._stats["ori_0_max"] - self._stats["ori_0_min"]) + self._stats["ori_0_min"]
             j += 6
-            x[:, j:j + 3] = x[:, j:j + 3] * self._stats["rel_half_s_0_std"] + self._stats["rel_half_s_0_mean"]
+            x[:, j:j + 3] = x[:, j:j + 3] * (self._stats["rel_half_s_0_max"] - self._stats["rel_half_s_0_min"]) + self._stats["rel_half_s_0_min"]
             j += 3
-            x[:, j:j + 1] = x[:, j:j + 1] * self._stats["abs_s_0_std"] + self._stats["abs_s_0_mean"]
+            x[:, j:j + 1] = x[:, j:j + 1] * (self._stats["abs_s_0_max"] - self._stats["abs_s_0_min"]) + self._stats["abs_s_0_min"]
             j += 1
-            x[:, j:j + 3] = x[:, j:j + 3] * self._stats["rel_p_0_std"] + self._stats["rel_p_0_mean"]
+            x[:, j:j + 3] = x[:, j:j + 3] * (self._stats["rel_p_0_max"] - self._stats["rel_p_0_min"]) + self._stats["rel_p_0_min"]
             j += 3
-            x[:, j:j + 3] = x[:, j:j + 3] * self._stats["abs_p_0_std"] + self._stats["abs_p_0_mean"]
+            x[:, j:j + 3] = x[:, j:j + 3] * (self._stats["abs_p_0_max"] - self._stats["abs_p_0_min"]) + self._stats["abs_p_0_min"]
         else:
             j = 0
-            x[:, j:j + 5 ** 3] = x[:, j:j + 5 ** 3] * self._stats[f"grid_{l}_std"] + self._stats[f"grid_{l}_mean"]
+            x[:, j:j + 5 ** 3] = x[:, j:j + 5 ** 3] * (self._stats[f"grid_{l}_max"] - self._stats[f"grid_{l}_min"]) + self._stats[f"grid_{l}_min"]
             j += 5 ** 3
-            x[:, j:j + 6] = x[:, j:j + 6] * self._stats[f"ori_{l}_std"] + self._stats[f"ori_{l}_mean"]
+            x[:, j:j + 6] = x[:, j:j + 6] * (self._stats[f"ori_{l}_max"] - self._stats[f"ori_{l}_min"]) + self._stats[f"ori_{l}_min"]
             j += 6
-            x[:, j:j + 3] = x[:, j:j + 3] * self._stats[f"rel_half_s_{l}_std"] + self._stats[f"rel_half_s_{l}_mean"]
+            x[:, j:j + 3] = x[:, j:j + 3] * (self._stats[f"rel_half_s_{l}_max"] - self._stats[f"rel_half_s_{l}_min"]) + self._stats[f"rel_half_s_{l}_min"]
             j += 3
-            x[:, j:j + 3] = x[:, j:j + 3] * self._stats[f"rel_p_{l}_std"] + self._stats[f"rel_p_{l}_mean"]
+            x[:, j:j + 3] = x[:, j:j + 3] * (self._stats[f"rel_p_{l}_max"] - self._stats[f"rel_p_{l}_min"]) + self._stats[f"rel_p_{l}_min"]
 
         return x
 
     def normalize(self, x, l):
         if l == 0:
             j = 0
-            x[:, j:j + 7 ** 3] = (x[:, j:j + 7 ** 3] - self._stats["grid_0_mean"]) / self._stats["grid_0_std"]
+            x[:, j:j + 7 ** 3] = (x[:, j:j + 7 ** 3] - self._stats["grid_0_min"]) / (self._stats["grid_0_max"] - self._stats["grid_0_min"])
             j += 7 ** 3
-            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats["ori_0_mean"]) / self._stats["ori_0_std"]
+            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats["ori_0_min"]) / (self._stats["ori_0_max"] - self._stats["ori_0_min"])
             j += 6
-            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["rel_half_s_0_mean"]) / self._stats["rel_half_s_0_std"]
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["rel_half_s_0_min"]) / (self._stats["rel_half_s_0_max"] - self._stats["rel_half_s_0_min"])
             j += 3
-            x[:, j:j + 1] = (x[:, j:j + 1] - self._stats["abs_s_0_mean"]) / self._stats["abs_s_0_std"]
+            x[:, j:j + 1] = (x[:, j:j + 1] - self._stats["abs_s_0_min"]) / (self._stats["abs_s_0_max"] - self._stats["abs_s_0_min"])
             j += 1
-            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["rel_p_0_mean"]) / self._stats["rel_p_0_std"]
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["rel_p_0_min"]) / (self._stats["rel_p_0_max"] - self._stats["rel_p_0_min"])
             j += 3
-            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["abs_p_0_mean"]) / self._stats["abs_p_0_std"]
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["abs_p_0_min"]) / (self._stats["abs_p_0_max"] - self._stats["abs_p_0_min"])
         else:
             j = 0
-            x[:, j:j + 5 ** 3] = (x[:, j:j + 5 ** 3] - self._stats[f"grid_{l}_mean"]) / self._stats[f"grid_{l}_std"]
+            x[:, j:j + 5 ** 3] = (x[:, j:j + 5 ** 3] - self._stats[f"grid_{l}_min"]) / (self._stats[f"grid_{l}_max"] - self._stats[f"grid_{l}_min"])
             j += 5 ** 3
-            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats[f"ori_{l}_mean"]) / self._stats[f"ori_{l}_std"]
+            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats[f"ori_{l}_min"]) / (self._stats[f"ori_{l}_max"] - self._stats[f"ori_{l}_min"])
             j += 6
-            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_half_s_{l}_mean"]) / self._stats[f"rel_half_s_{l}_std"]
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_half_s_{l}_min"]) / (self._stats[f"rel_half_s_{l}_max"] - self._stats[f"rel_half_s_{l}_min"])
             j += 3
-            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_p_{l}_mean"]) / self._stats[f"rel_p_{l}_std"]
+            x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_p_{l}_min"]) / (self._stats[f"rel_p_{l}_max"] - self._stats[f"rel_p_{l}_min"])
 
 
     def __getitem__(self, idx):

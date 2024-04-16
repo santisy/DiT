@@ -68,21 +68,26 @@ def main(args):
         x1 = x1.unsqueeze(dim=0).to(device)
         x2 = x2.unsqueeze(dim=0).to(device)
         with torch.no_grad():
-            #x0_rec, _, _ = vae_model_list[0](x0)
-            #x1_rec, _, _ = vae_model_list[1](x1)
-            #x2_rec, _, _ = vae_model_list[2](x2)
-            #loss = F.mse_loss(x0_rec, x0, reduction="sum")/ x0.size(1) + \
-            #       F.mse_loss(x1_rec, x1, reduction="sum")/ x1.size(1) + \
-            #       F.mse_loss(x2_rec, x2, reduction="sum")/ x2.size(1)
-            #print(loss)
-            #import pdb; pdb.set_trace()
+            x0_rec, _, _ = vae_model_list[0](x0)
+            x1_rec, _, _ = vae_model_list[1](x1)
+            x2_rec, _, _ = vae_model_list[2](x2)
+            loss = F.mse_loss(x0_rec, x0, reduction="sum")/ x0.size(1) + \
+                   F.mse_loss(x1_rec, x1, reduction="sum")/ x1.size(1) + \
+                   F.mse_loss(x2_rec, x2, reduction="sum")/ x2.size(1)
 
-            latent_0 = vae_model_list[0].encode_and_reparam(x0)
-            latent_1 = vae_model_list[1].encode_and_reparam(x1)
-            latent_2 = vae_model_list[2].encode_and_reparam(x2)
-            online_variance_list[0].update(latent_0[0].detach().cpu())
-            online_variance_list[1].update(latent_1[0].detach().cpu())
-            online_variance_list[2].update(latent_2[0].detach().cpu())
+            loss_l1 = F.l1_loss(x0_rec, x0, reduction="sum")/ x0.size(1) + \
+                   F.l1_loss(x1_rec, x1, reduction="sum")/ x1.size(1) + \
+                   F.l1_loss(x2_rec, x2, reduction="sum")/ x2.size(1)
+
+            print(loss, loss_l1)
+            import pdb; pdb.set_trace()
+
+            #latent_0 = vae_model_list[0].encode_and_reparam(x0)
+            #latent_1 = vae_model_list[1].encode_and_reparam(x1)
+            #latent_2 = vae_model_list[2].encode_and_reparam(x2)
+            #online_variance_list[0].update(latent_0[0].detach().cpu())
+            #online_variance_list[1].update(latent_1[0].detach().cpu())
+            #online_variance_list[2].update(latent_2[0].detach().cpu())
 
     # Dump the statistics
     np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),
