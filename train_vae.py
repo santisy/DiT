@@ -84,6 +84,12 @@ def create_logger(logging_dir):
         logger.addHandler(logging.NullHandler())
     return logger
 
+
+def random_sample_and_reshape(x, l):
+    indices = torch.randperm(x.size(1))[:l]
+    x = x[:, indices, :]
+    return x.reshape(x.size(0) * x.size(1), -1)
+    
 #################################################################################
 #                                  Training Loop                                #
 #################################################################################
@@ -142,11 +148,10 @@ def main(args):
 
     for l in range(3):
         in_ch = dataset.get_level_vec_len(l)
-        hidden_size = int(in_ch * 8)
-        model = VAE(config.vae.layer_num,
-                    in_ch,
-                    hidden_size,
-                    in_ch // config.vae.latent_ratio)
+        model = VAE(in_ch,
+                    in_ch // config.vae.latent_ratio,
+                    num_layers=config.vae.layer_num
+                    )
 
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -157,7 +162,7 @@ def main(args):
         model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.Adam(model_list.parameters(), lr=1e-3, weight_decay=0)
+    opt = torch.optim.Adam(model_list.parameters(), lr=2e-4, weight_decay=0)
     if not args.no_lr_decay:
         scheduler = StepLR(opt, step_size=1, gamma=0.999)
 
@@ -200,9 +205,9 @@ def main(args):
         for x0, x1, x2, _, _, _, _ in loader:
 
             # To device
-            x0 = x0.to(device)
-            x1 = x1.to(device)
-            x2 = x2.to(device)
+            x0 = random_sample_and_reshape(x0.to(device), 8)
+            x1 = random_sample_and_reshape(x1.to(device), 8)
+            x2 = random_sample_and_reshape(x2.to(device), 8)
             x_list = [x0, x1, x2]
 
             loss = 0
