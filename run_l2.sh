@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:v100l:2
-#SBATCH --job-name="l2_0414"
+#SBATCH --job-name="l2_0416"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # list out some useful information (optional)
@@ -40,14 +40,12 @@ torchrun \
     --nproc_per_node=$NPROCS \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train.py --exp-id l2_0414 \
+train.py --exp-id l2_0416 \
     --epoch 400 \
     --global-batch-size 64 \
     --config-file configs/OFALG_config.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane \
     --num-workers 24 \
     --ckpt-every 8000 \
-    --vae-std datasets/vae_stds/vae_0020000-shapenet_airplane-stds.npz \
-    --vae-ckpt datasets/vae_ckpts/vae_0020000.pt \
     --work-on-tmp-dir \
     --level-num 2
