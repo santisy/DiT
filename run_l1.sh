@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=48G
-#SBATCH --gres=gpu:v100l:2
+#SBATCH --gres=gpu:v100l:1
 #SBATCH --job-name="l1_0416"
 #SBATCH --output=./sbatch_logs/%j.log
 

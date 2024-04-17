@@ -13,4 +13,5 @@ data:
 
 diffusion:
     noise_schedule: "linear"
+    learn_sigma: false
     diffusion_steps: 1000

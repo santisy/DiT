@@ -146,8 +146,10 @@ def main(args):
     # Temp variables
     in_ch = dataset.get_level_vec_len(level_num)
     num_heads = config.model.num_heads
-    hidden_size = int(np.ceil((in_ch * 8) / float(num_heads)) * num_heads)
+    hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
     depth = config.model.depth
+    if level_num == 2:
+        hidden_size = hidden_size * 2
     condition_node_dim = [dim for dim in dataset.get_condition_dim(level_num)]
 
     # Create DiT model
@@ -162,7 +164,7 @@ def main(args):
         mlp_ratio=config.model.mlp_ratio,
         depth=depth,
         num_heads=num_heads,
-        learn_sigma=False,
+        learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
         aligned_gen=True if level_num == 2 else False,

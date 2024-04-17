@@ -42,7 +42,7 @@ torchrun \
     --master_port=$MASTER_PORT \
 train.py --exp-id l2_0416 \
     --epoch 400 \
-    --global-batch-size 64 \
+    --global-batch-size 48 \
     --config-file configs/OFALG_config.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane \
     --num-workers 24 \
