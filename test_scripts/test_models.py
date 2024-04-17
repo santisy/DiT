@@ -39,7 +39,7 @@ model = DiT(in_channels=64,
             condition_node_dim=[32],
             condition_node_num=[2,], 
             cross_layers=[2,3],
-            aligned_gen=True,
+            aligned_gen=False,
             add_inject=True,
             num_classes=-1,
             pos_embedding_version="v2"
@@ -50,7 +50,7 @@ cond_x = [torch.randn(4, 2, 32),]
 pos_x = [torch.randn(4, 2, 3),]
 t = torch.rand(4,)
 out = model(input_x, t, a, None, cond_x, pos_x)
-print("level 1 test passed (aligned, 1 cond), output shape is", out.shape)
+print("level 1 test passed (not aligned, 1 cond), output shape is", out.shape)
 
 
 del model

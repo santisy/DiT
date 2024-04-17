@@ -208,8 +208,13 @@ class DiTBlock(nn.Module):
                                                           nn.Linear(hidden_size, 5 * hidden_size, bias=True)))
             else:
                 self.layer_list_add_inject = nn.ModuleList()
+                self.adaLN_modulation_mca_list = nn.ModuleList()
+                self.norm0_list = nn.ModuleList()
                 for _ in range(cond_num):
+                    self.norm0_list.append(nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6))
                     self.layer_list_add_inject.append(nn.Linear(hidden_size, hidden_size))
+                    self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
+                                                          nn.Linear(hidden_size, 3 * hidden_size, bias=True)))
 
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
@@ -217,7 +222,7 @@ class DiTBlock(nn.Module):
         )
 
 
-    def forward(self, x, c, x0):
+    def forward(self, x, c, x0, a_list):
         # x0 means the previous level embedded results (condition)
 
         if self.cross_attention:
@@ -227,14 +232,16 @@ class DiTBlock(nn.Module):
                     x = x + gate_mca.unsqueeze(1) * cross(modulate(norm0(x), shift_mca, scale_mca),
                                                           modulate(norm00(x0_), shift_mca0, scale_mca0))
             else:
-                for layer_add, x0_ in zip(self.layer_list_add_inject, x0):
+                for layer_add, x0_, a, norm0, adaMM in zip(self.layer_list_add_inject, x0, a_list, self.norm0_list, self.adaLN_modulation_mca_list):
                     x0_ = layer_add(x0_)
                     seq_0 = x0_.size(1)
                     seq_x = x.size(1)
                     if seq_0 == seq_x:
-                        x = x + x0_
+                        add_ = x0_
                     else:
-                        x = x + torch.repeat_interleave(x0_, seq_x // seq_0, dim=1)
+                        add_ = torch.repeat_interleave(x0_, seq_x // seq_0, dim=1)
+                    gate_mca, shift_mca, scale_mca = adaMM(a).chunk(3, dim=1)
+                    x = x + gate_mca.unsqueeze(1) * modulate(norm0(add_), shift_mca, scale_mca)
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
@@ -475,7 +482,7 @@ class DiT(nn.Module):
             y = self.y_embedder(y, self.training)    # (N, D)
         else:
             y = 0
-        c = t + y + sum(a_out)                               # (N, D)
+        c = t + y + sum(a_out)                              # (N, D)
 
         x = self.input_layer(x)
         ## -1 means using the nearest level GT positions as the positional encoding
@@ -483,7 +490,7 @@ class DiT(nn.Module):
             x = x + PEs[-1]
 
         for block in self.blocks:
-            x = block(x, c, x0)                      # (N, L, D)
+            x = block(x, c, x0, a_out)                      # (N, L, D)
         x = self.output_layer(x, c)
         return x
 
