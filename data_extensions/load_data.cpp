@@ -65,6 +65,7 @@ void loadFromFile(std::ifstream& file,
 
     for (int i = 0; i < length; i++){
         auto data = new float[unitLength];
+        auto dataPtr = data;
         file.read(reinterpret_cast<char*>(data), sizeof(float) * unitLength);
         int parentIdx = rootFlag ? 0 : static_cast<int>(data[1]);
         int currentIdx = static_cast<int>(data[0]);
@@ -94,7 +95,7 @@ void loadFromFile(std::ifstream& file,
         out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(7 * 7 * 7 + 8, at::indexing::None)},
                        nodeVec.index({at::indexing::Slice(7 * 7 * 7 + 6, at::indexing::None)}));
 
-        delete[] data;
+        delete[] dataPtr;
     }
 }
 
@@ -109,6 +110,7 @@ void loadFromFileAndAssignPos(std::ifstream& file,
 
     for (int i = 0; i < length; i++){
         auto data = new float[unitLength];
+        auto dataPtr = data;
         file.read(reinterpret_cast<char*>(data), sizeof(float) * unitLength);
         int parentIdx = static_cast<int>(data[1]);
         int currentIdx = static_cast<int>(data[0]);
@@ -154,7 +156,7 @@ void loadFromFileAndAssignPos(std::ifstream& file,
         out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(5 * 5 * 5 + 8, at::indexing::None)},
                        nodeVec.index({at::indexing::Slice(5 * 5 * 5 + 6, at::indexing::None)}));
 
-        delete[] data;
+        delete[] dataPtr;
     }
 }
 
