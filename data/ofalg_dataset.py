@@ -35,11 +35,11 @@ class OFLAGDataset(Dataset):
 
     def get_level_vec_len(self, level_num):
         if level_num == 0:
-            return self._unit_length0 - 2
+            return self._unit_length0
         elif level_num == 1:
-            return self._unit_length1 - 2
+            return self._unit_length1
         elif level_num == 2:
-            return self._unit_length2 - 2
+            return self._unit_length2
         else:
             raise ValueError(f"Invalid level number {level_num}.")
 
@@ -78,8 +78,9 @@ class OFLAGDataset(Dataset):
             j = 0
             x[:, j:j + 7 ** 3] = x[:, j:j + 7 ** 3] * (self._stats["grid_0_max"] - self._stats["grid_0_min"])  + self._stats["grid_0_min"]
             j += 7 ** 3
-            x[:, j:j + 6] = x[:, j:j + 6] * (self._stats["ori_0_max"] - self._stats["ori_0_min"]) + self._stats["ori_0_min"]
-            j += 6
+            # Angular encoding orientations
+            x[:, j:j + 8] = x[:, j:j + 8] * 2.0 - 1.0
+            j += 8 
             x[:, j:j + 3] = x[:, j:j + 3] * (self._stats["rel_half_s_0_max"] - self._stats["rel_half_s_0_min"]) + self._stats["rel_half_s_0_min"]
             j += 3
             x[:, j:j + 1] = x[:, j:j + 1] * (self._stats["abs_s_0_max"] - self._stats["abs_s_0_min"]) + self._stats["abs_s_0_min"]
@@ -91,8 +92,8 @@ class OFLAGDataset(Dataset):
             j = 0
             x[:, j:j + 5 ** 3] = x[:, j:j + 5 ** 3] * (self._stats[f"grid_{l}_max"] - self._stats[f"grid_{l}_min"]) + self._stats[f"grid_{l}_min"]
             j += 5 ** 3
-            x[:, j:j + 6] = x[:, j:j + 6] * (self._stats[f"ori_{l}_max"] - self._stats[f"ori_{l}_min"]) + self._stats[f"ori_{l}_min"]
-            j += 6
+            x[:, j:j + 8] = x[:, j:j + 8] * 2.0 - 1.0
+            j += 8
             x[:, j:j + 3] = x[:, j:j + 3] * (self._stats[f"rel_half_s_{l}_max"] - self._stats[f"rel_half_s_{l}_min"]) + self._stats[f"rel_half_s_{l}_min"]
             j += 3
             x[:, j:j + 3] = x[:, j:j + 3] * (self._stats[f"rel_p_{l}_max"] - self._stats[f"rel_p_{l}_min"]) + self._stats[f"rel_p_{l}_min"]
@@ -104,8 +105,8 @@ class OFLAGDataset(Dataset):
             j = 0
             x[:, j:j + 7 ** 3] = (x[:, j:j + 7 ** 3] - self._stats["grid_0_min"]) / (self._stats["grid_0_max"] - self._stats["grid_0_min"])
             j += 7 ** 3
-            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats["ori_0_min"]) / (self._stats["ori_0_max"] - self._stats["ori_0_min"])
-            j += 6
+            x[:, j:j + 8] = (x[:, j:j + 8] + 1.0) / 2.0
+            j += 8
             x[:, j:j + 3] = (x[:, j:j + 3] - self._stats["rel_half_s_0_min"]) / (self._stats["rel_half_s_0_max"] - self._stats["rel_half_s_0_min"])
             j += 3
             x[:, j:j + 1] = (x[:, j:j + 1] - self._stats["abs_s_0_min"]) / (self._stats["abs_s_0_max"] - self._stats["abs_s_0_min"])
@@ -117,8 +118,8 @@ class OFLAGDataset(Dataset):
             j = 0
             x[:, j:j + 5 ** 3] = (x[:, j:j + 5 ** 3] - self._stats[f"grid_{l}_min"]) / (self._stats[f"grid_{l}_max"] - self._stats[f"grid_{l}_min"])
             j += 5 ** 3
-            x[:, j:j + 6] = (x[:, j:j + 6] - self._stats[f"ori_{l}_min"]) / (self._stats[f"ori_{l}_max"] - self._stats[f"ori_{l}_min"])
-            j += 6
+            x[:, j:j + 8] = (x[:, j:j + 8] + 1.0) / 2.0
+            j += 8
             x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_half_s_{l}_min"]) / (self._stats[f"rel_half_s_{l}_max"] - self._stats[f"rel_half_s_{l}_min"])
             j += 3
             x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_p_{l}_min"]) / (self._stats[f"rel_p_{l}_max"] - self._stats[f"rel_p_{l}_min"])

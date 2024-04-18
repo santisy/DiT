@@ -69,7 +69,31 @@ void loadFromFile(std::ifstream& file,
         int parentIdx = rootFlag ? 0 : static_cast<int>(data[1]);
         int currentIdx = static_cast<int>(data[0]);
         at::Tensor nodeVec = at::from_blob(data + 2, {unitLength - 2}).clone();
-        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice()}, nodeVec);
+
+        // Load grid values         
+        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(at::indexing::None, 7 * 7 * 7)},
+                       nodeVec.index({at::indexing::Slice(at::indexing::None, 7 * 7 * 7)}));
+
+        // Do the angular encoding conversion
+        data = data + 7 * 7 * 7 + 2;
+        float theta1 = atan2(data[1], data[0]);
+        float phi1 = atan2(sqrtf(data[0] * data[0] + data[1] * data[1]), data[2]);
+        float theta2 = atan2(data[4], data[3]);
+        float phi2 = atan2(sqrtf(data[3] * data[3] + data[4] * data[4]), data[5]);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7}, sinf(theta1));
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 1}, cosf(theta1));
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 2}, sinf(phi1));
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 3}, cosf(phi1));
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 4}, sinf(theta2));
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 5}, cosf(theta2));
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 6}, sinf(phi2));
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 7}, cosf(phi2));
+
+
+        // Copy the rest
+        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(7 * 7 * 7 + 8, at::indexing::None)},
+                       nodeVec.index({at::indexing::Slice(7 * 7 * 7 + 6, at::indexing::None)}));
+
         delete[] data;
     }
 }
@@ -104,7 +128,31 @@ void loadFromFileAndAssignPos(std::ifstream& file,
         outPos.index_put_({outIdx, 2}, prevPos.index({parentIdx, 2}) - scale + scale * 0.95f * zIdx + absoluteScale / 2.0f);
 
         at::Tensor nodeVec = at::from_blob(data + 2, {unitLength - 2}).clone();
-        out.index_put_({outIdx, at::indexing::Slice()}, nodeVec);
+        //out.index_put_({outIdx, at::indexing::Slice()}, nodeVec);
+
+        // Load grid values         
+        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(at::indexing::None, 5 * 5 * 5)},
+                       nodeVec.index({at::indexing::Slice(at::indexing::None, 5 * 5 * 5)}));
+
+        // Do the angular encoding conversion
+        data = data + 5 * 5 * 5 + 2;
+        float theta1 = atan2(data[1], data[0]);
+        float phi1 = atan2(sqrtf(data[0] * data[0] + data[1] * data[1]), data[2]);
+        float theta2 = atan2(data[4], data[3]);
+        float phi2 = atan2(sqrtf(data[3] * data[3] + data[4] * data[4]), data[5]);
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5}, sinf(theta1));
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 1}, cosf(theta1));
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 2}, sinf(phi1));
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 3}, cosf(phi1));
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 4}, sinf(theta2));
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 5}, cosf(theta2));
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 6}, sinf(phi2));
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 7}, cosf(phi2));
+
+
+        // Copy the rest
+        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(5 * 5 * 5 + 8, at::indexing::None)},
+                       nodeVec.index({at::indexing::Slice(5 * 5 * 5 + 6, at::indexing::None)}));
 
         delete[] data;
     }
@@ -129,9 +177,9 @@ std::vector<at::Tensor> readAndConstruct(std::string inputPath,
     length2 = static_cast<int>(length2f);
 
     // The deducted 2 are the tree topology indicators (parent ID and children ID)
-    at::Tensor level0Tensor = at::zeros({octreeRootNum, level0UnitLength - 2});
-    at::Tensor level1Tensor = at::zeros({octreeRootNum * 8, level1UnitLength - 2});
-    at::Tensor level2Tensor = at::zeros({octreeRootNum * 8 * 8, level2UnitLength - 2});
+    at::Tensor level0Tensor = at::zeros({octreeRootNum, level0UnitLength});
+    at::Tensor level1Tensor = at::zeros({octreeRootNum * 8, level1UnitLength});
+    at::Tensor level2Tensor = at::zeros({octreeRootNum * 8 * 8, level2UnitLength});
 
     // Positions
     at::Tensor level1Positions = at::zeros({octreeRootNum * 8, 3});
@@ -178,6 +226,24 @@ at::Tensor deducePositionFromSample(at::Tensor preScales,
     return outPos;
 }
 
+at::Tensor angularBack(at::Tensor inputVec, const int M){
+    at::Tensor out = at::zeros({inputVec.numel() - 2});
+    out.index_put_({at::indexing::Slice(at::indexing::None, M * M * M)},
+                    inputVec.index({at::indexing::Slice(at::indexing::None, M * M * M)}));
+    
+    int i = M * M * M;
+    out[i] = inputVec[i + 3] * inputVec[i + 1];
+    out[i + 1] = inputVec[i + 3] * inputVec[i];
+    out[i + 2] = inputVec[i + 2];
+    out[i + 3] = inputVec[i + 7] * inputVec[i + 5];
+    out[i + 4] = inputVec[i + 7] * inputVec[i + 4];
+    out[i + 5] = inputVec[i + 6];
+
+    out.index_put_({at::indexing::Slice(M * M * M + 6, at::indexing::None)},
+                    inputVec.index({at::indexing::Slice(M * M * M + 8, at::indexing::None)}));
+    return out;
+}
+
 void dumpToBin(std::string outPath,
                at::Tensor &level0,
                at::Tensor &level1,
@@ -192,35 +258,35 @@ void dumpToBin(std::string outPath,
     std::vector<at::Tensor> level2_out;
 
     for (int i = 0; i < octreeRootNum; i++){
-        if (torch::sum(torch::abs(level0.index({i, at::indexing::Slice(-16, -10)}))).item().toFloat() < 1.0f){
+        if (at::sum(at::abs(level0.index({i, at::indexing::Slice(-16, -10)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l0_out_with_pc = torch::zeros({level0.size(1) + 2});
+        at::Tensor l0_out_with_pc = at::zeros({level0.size(1) + 2});
         l0_out_with_pc[0] = i; // Children index
         l0_out_with_pc[1] = -1;
-        l0_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, level0.index({i}));
+        l0_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level0.index({i}), 7));
         level0_out.push_back(l0_out_with_pc);
     }
 
     for (int i = 0; i < octreeRootNum * 8; i++){
-        if (torch::sum(torch::abs(level1.index({i, at::indexing::Slice(-12, -6)}))).item().toFloat() < 1.0f){
+        if (at::sum(at::abs(level1.index({i, at::indexing::Slice(-12, -6)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l1_out_with_pc = torch::zeros({level1.size(1) + 2});
+        at::Tensor l1_out_with_pc = at::zeros({level1.size(1) + 2});
         l1_out_with_pc[0] = i % 8 ; // Children index
         l1_out_with_pc[1] = i / 8;
-        l1_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, level1.index({i}));
+        l1_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level1.index({i}), 5));
         level1_out.push_back(l1_out_with_pc);
     }
 
     for (int i = 0; i < octreeRootNum * 8 * 8; i++){
-        if (torch::sum(torch::abs(level2.index({i, at::indexing::Slice(-12, -6)}))).item().toFloat() < 1.0f){
+        if (at::sum(at::abs(level2.index({i, at::indexing::Slice(-12, -6)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l2_out_with_pc = torch::zeros({level2.size(1) + 2});
+        at::Tensor l2_out_with_pc = at::zeros({level2.size(1) + 2});
         l2_out_with_pc[0] = i % 8 ; // Children index
         l2_out_with_pc[1] = i / 8;
-        l2_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, level2.index({i}));
+        l2_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level2.index({i}), 5));
         level2_out.push_back(l2_out_with_pc);
     }
 
