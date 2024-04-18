@@ -19,6 +19,7 @@ from typing import List
 from timm.models.vision_transformer import Attention, Mlp
 
 from utils.positional_embedding import fourier_positional_encoding
+from utils.positional_embedding import positional_encode
 
 
 def modulate(x, shift, scale):
@@ -30,13 +31,22 @@ def modulate(x, shift, scale):
 #################################################################################
 
 class PreviousNodeEmbedder(nn.Module):
-    def __init__(self, node_dim: List[int], hidden_size: int, PEV="v1"):
+    def __init__(self,
+                 node_dim: List[int],
+                 hidden_size: int,
+                 PEV="v1",
+                 level_num=0):
         super().__init__()
 
         self.mlp_list = nn.ModuleList()
         self.PEV = PEV # Positional embedding version
 
-        for nd in node_dim:
+        for i, nd in enumerate(node_dim):
+            #TODO: encode the positions here using NeRF style positional encoding!
+            if i == 0:
+                nd = nd + 10 * 16 * 2 - 10
+            else:
+                nd = nd + 6 * 16 * 2 - 6
             self.mlp_list.append(
                 nn.Sequential(
                 nn.Linear(nd, hidden_size, bias=True),
@@ -47,10 +57,16 @@ class PreviousNodeEmbedder(nn.Module):
 
     def forward(self, nodes: List[torch.Tensor], PEs: List[torch.Tensor]):
         embedded_out = []
-        for n, pe, mlp in zip(nodes, PEs, self.mlp_list):
+        for i, (n, pe, mlp) in enumerate(zip(nodes, PEs, self.mlp_list)):
             if self.PEV != "v2":
                 out = mlp(n) + pe
             else:
+                if i == 0:
+                    pe = positional_encode(n[:, :, -10:] * 2.0 - 1.0, 16)
+                    n = torch.cat([n[:, :, :-10], pe], dim=-1)
+                else:
+                    pe = positional_encode(n[:, :, -6:] * 2.0 - 1.0, 16)
+                    n = torch.cat([n[:, :, :-6], pe], dim=-1)
                 out = mlp(n)
             embedded_out.append(out)
         return embedded_out
@@ -333,7 +349,8 @@ class DiT(nn.Module):
         # ---- optional
         num_classes=1000,
         aligned_gen=False,
-        pos_embedding_version="v1"
+        pos_embedding_version="v1",
+        level_num=0
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -354,7 +371,10 @@ class DiT(nn.Module):
         else:
             self.input_layer = PackLayer(in_channels, hidden_size, sibling_num)
 
-        self.n_embedder = PreviousNodeEmbedder(condition_node_dim, hidden_size, PEV=pos_embedding_version)
+        self.n_embedder = PreviousNodeEmbedder(condition_node_dim,
+                                               hidden_size,
+                                               PEV=pos_embedding_version,
+                                               level_num=level_num)
         # This is to patchify images from NCHW -> NLC
         # We will not use in our fully tokenized transformer case
         self.t_embedder = TimestepEmbedder(hidden_size)
