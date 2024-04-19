@@ -90,7 +90,7 @@ def random_sample_and_reshape(x, l):
     for i in range(x.size(0)):
         indices = torch.randperm(x.size(1))[:l]
         out.append(x[i, indices, :])
-    return torch.cat(out, dim=0)
+    return torch.cat(out, dim=0).unsqueeze(dim=0)
     
 #################################################################################
 #                                  Training Loop                                #
@@ -150,9 +150,10 @@ def main(args):
 
     for l in range(3):
         in_ch = dataset.get_level_vec_len(l)
-        model = VAE(in_ch,
-                    in_ch // config.vae.latent_ratio,
-                    num_layers=config.vae.layer_num
+        model = VAE(config.vae.layer_num,
+		    in_ch,
+                    in_ch * 8,
+                    in_ch // config.vae.latent_ratio 
                     )
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
