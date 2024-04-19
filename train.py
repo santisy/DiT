@@ -257,7 +257,6 @@ def main(args):
                 weighting_mask = torch.ones_like(x)
                 weighting_mask[:, :, -14:] *= 10
 
-            weighting_mask = weighting_mask / weighting_mask.sum(dim=-1, keepdim=True)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             loss_dict = diffusion.training_losses(model, x, t,
