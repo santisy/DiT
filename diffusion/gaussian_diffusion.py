@@ -831,7 +831,7 @@ class GaussianDiffusion:
             if weighting_mask is None:
                 terms["mse"] = mean_flat((target - model_output) ** 2)
             else:
-                terms["mse"] = mean_flat(((target - model_output) * weighting_mask) ** 2)
+                terms["mse"] = mean_flat((target - model_output) ** 2 * weighting_mask)
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"]
             else:
