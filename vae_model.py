@@ -3,172 +3,73 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-class TransformerModule(nn.Module):
-    def __init__(self, d_model, nhead, num_layers, dropout=0.1):
-        super(TransformerModule, self).__init__()
-        #self.embed = nn.Linear(token_size, d_model)
-        transformer_layer = nn.TransformerEncoderLayer(d_model=d_model,
-                                                       dim_feedforward=d_model * 4,
-                                                       nhead=nhead,
-                                                       dropout=dropout,
-                                                       activation="gelu",
-                                                       batch_first=True)
-        self.transformer = nn.TransformerEncoder(transformer_layer, num_layers=num_layers)
-    
-    def forward(self, x):
-        #x = self.embed(x) * math.sqrt(self.d_model)  # Embedding and scaling
-        x = self.transformer(x)  # Transformer encoder processes batches first
-        return x
-
 class VAE(nn.Module):
     def __init__(self,
+                 layer_n,
                  input_dim,
+                 hidden_dim,
                  latent_dim,
-                 num_layers=8,
-                 token_n=16,
-                 nhead=4
                  ):
         super(VAE, self).__init__()
-        self.token_n = token_n
-        self.d_model = d_model = (input_dim * 32 // token_n // nhead ) * nhead
-        self.embed_dim = d_model * token_n
-        self.latent_dim = latent_dim
+        # Encoder
+        self.input_fc = nn.Linear(input_dim, hidden_dim)
+        self.fc1 = nn.Sequential(*[x for x in [nn.ReLU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
+        self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
+        self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
+        # Decoder
+        self.fc3 = nn.Linear(latent_dim, hidden_dim)
+        self.fc4 = nn.Sequential(*[x for x in [nn.ReLU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
+        self.output_fc = nn.Sequential(nn.Linear(hidden_dim, input_dim),
+                                       nn.Sigmoid())
 
-        self.input_layer = nn.Linear(input_dim, self.embed_dim)
-        self.encoder = TransformerModule(d_model, nhead, num_layers)
-        self.decoder = TransformerModule(d_model, nhead, num_layers)  # Assuming symmetry in the architecture
+    def encode(self, x):
+        x = self.input_fc(x)
+        h = self.fc1(x)
+        return self.fc2_mean(h), self.fc2_logvar(h)
 
-        self.fc_mu = nn.Linear(d_model * token_n, latent_dim)
-        self.fc_var = nn.Linear(d_model * token_n, latent_dim)
-        self.fc_decode = nn.Linear(latent_dim, d_model * token_n)
-
-        self.output_layer = nn.Linear(self.embed_dim, input_dim)
-
-    def reparameterize(self, mu, logvar):
+    def reparameterize(self, mean, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mu + eps * std
+        return mean + eps*std
 
     def decode(self, z):
-        # Decode
-        B = z.size(0)
-        z = self.fc_decode(z)
-        z = z.reshape(B, -1, self.d_model)
-        z = self.decoder(z)
-
-        # Output
-        z = z.reshape(B, -1)
-        out = self.output_layer(z)
-        return out
+        h = self.fc3(z)
+        h = self.fc4(h)
+        return self.output_fc(h)
 
     def encode_and_reparam(self, x):
-        B = x.size(0)
-        # Reshape and embed
-        x = self.input_layer(x)
-        x = x.reshape(B, -1, self.d_model)
+        B, L, C = x.shape
+        x = x.reshape(B * L, C)
 
-        # Encode
-        encoded = self.encoder(x)
+        mean, logvar = self.encode(x)
+        out = self.reparameterize(mean, logvar)
+        out = out.reshape(B, L, -1)
 
-        # Reparameterize
-        encoded = encoded.reshape(B, -1)  # Pooling over the sequence
-        mu = self.fc_mu(encoded)
-        log_var = self.fc_var(encoded)
-        z = self.reparameterize(mu, log_var)
-        z = z.reshape(B, self.latent_dim)
-
-        return z
-
+        return out
+        
     def forward(self, x):
-        B = x.size(0)
-        # Reshape and embed
-        x = self.input_layer(x)
-        x = x.reshape(B, -1, self.d_model)
+        B, L, C = x.shape
+        x = x.reshape(B * L, C)
 
-        # Encode
-        encoded = self.encoder(x)
+        mean, logvar = self.encode(x)
+        z = self.reparameterize(mean, logvar)
+        out =  self.decode(z)
 
-        # Reparameterize
-        encoded = encoded.reshape(B, -1)  # Pooling over the sequence
-        mu = self.fc_mu(encoded)
-        log_var = self.fc_var(encoded)
-        z = self.reparameterize(mu, log_var)
+        out = out.reshape(B, L, C)
+        mean = mean.reshape(B, L, -1)
+        logvar = logvar.reshape(B, L, -1)
 
-        # Decode
-        z = self.fc_decode(z)
-        z = z.reshape(B, -1, self.d_model)
-        z = self.decoder(z)
-
-        # Output
-        z = z.reshape(B, -1)
-        out = self.output_layer(z)
-
-        return out, mu, log_var
-
-#class VAE(nn.Module):
-#    def __init__(self,
-#                 layer_n,
-#                 input_dim,
-#                 hidden_dim,
-#                 latent_dim,
-#                 ):
-#        super(VAE, self).__init__()
-#        # Encoder
-#        self.input_fc = nn.Linear(input_dim, hidden_dim)
-#        self.fc1 = nn.Sequential(*[x for x in [nn.ReLU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
-#        self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
-#        self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
-#        # Decoder
-#        self.fc3 = nn.Linear(latent_dim, hidden_dim)
-#        self.fc4 = nn.Sequential(*[x for x in [nn.ReLU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
-#        self.output_fc = nn.Linear(hidden_dim, input_dim)
-#
-#    def encode(self, x):
-#        x = self.input_fc(x)
-#        h = self.fc1(x)
-#        return self.fc2_mean(h), self.fc2_logvar(h)
-#
-#    def reparameterize(self, mean, logvar):
-#        std = torch.exp(0.5 * logvar)
-#        eps = torch.randn_like(std)
-#        return mean + eps*std
-#
-#    def decode(self, z):
-#        h = self.fc3(z)
-#        h = self.fc4(h)
-#        return self.output_fc(h)
-#
-#    def encode_and_reparam(self, x):
-#        B, L, C = x.shape
-#        x = x.reshape(B * L, C)
-#
-#        mean, logvar = self.encode(x)
-#        out = self.reparameterize(mean, logvar)
-#        out = out.reshape(B, L, -1)
-#
-#        return out
-#        
-#    def forward(self, x):
-#        B, L, C = x.shape
-#        x = x.reshape(B * L, C)
-#
-#        mean, logvar = self.encode(x)
-#        z = self.reparameterize(mean, logvar)
-#        out =  self.decode(z)
-#
-#        out = out.reshape(B, L, C)
-#        mean = mean.reshape(B, L, -1)
-#        logvar = logvar.reshape(B, L, -1)
-#
-#        return out, mean, logvar
+        return out, mean, logvar
 
 # Loss function
-def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
+def loss_function(recon_x, x, mean, logvar, last_n, last_n_weight,
+                  kl_weight=1e-6):
     b = x.size(0)
-    recon = F.l1_loss(recon_x, x, reduction="sum") / b
+    recon_coords = F.l1_loss(recon_x[:, :, -last_n:], x[:, :, -last_n:], reduction="sum") / b
+    recon_other = F.l1_loss(recon_x[:, :, :-last_n], x[:, :, :-last_n], reduction="sum") / b
     # KL divergence
     KLD = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
-    return recon + KLD * kl_weight
+    return recon_coords * last_n_weight + recon_other + KLD * kl_weight
 
 class OnlineVariance(object):
     def __init__(self, num_features):

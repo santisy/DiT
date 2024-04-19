@@ -214,9 +214,12 @@ def main(args):
 
             loss = 0
 
-            for x, model in zip(x_list, model_list):
+            for i, (x, model) in enumerate(zip(x_list, model_list)):
                 x_rec, mean, logvar = model(x)
-                loss += loss_function(x_rec, x, mean, logvar)
+                if i == 0:
+                    loss += loss_function(x_rec, x, mean, logvar, 18, 40)
+                else:
+                    loss += loss_function(x_rec, x, mean, logvar, 14, 20)
 
             opt.zero_grad()
             loss.backward()
