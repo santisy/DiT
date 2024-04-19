@@ -152,7 +152,7 @@ def main(args):
         in_ch = dataset.get_level_vec_len(l)
         model = VAE(config.vae.layer_num,
 		    in_ch,
-                    in_ch * 8,
+                    in_ch * 16,
                     in_ch // config.vae.latent_ratio 
                     )
         
@@ -209,8 +209,8 @@ def main(args):
 
             # To device
             x0 = random_sample_and_reshape(x0.to(device), 32)
-            x1 = random_sample_and_reshape(x1.to(device), 32)
-            x2 = random_sample_and_reshape(x2.to(device), 32)
+            x1 = random_sample_and_reshape(x1.to(device), 128)
+            x2 = random_sample_and_reshape(x2.to(device), 256)
             x_list = [x0, x1, x2]
 
             loss = 0
