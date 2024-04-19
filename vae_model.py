@@ -13,12 +13,12 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
         # Encoder
         self.input_fc = nn.Linear(input_dim, hidden_dim)
-        self.fc1 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
+        self.fc1 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
         self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
         self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
         # Decoder
         self.fc3 = nn.Linear(latent_dim, hidden_dim)
-        self.fc4 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim)] for _ in range(layer_n)])
+        self.fc4 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
         self.output_fc = nn.Sequential(nn.Linear(hidden_dim, input_dim),
                                        nn.Sigmoid())
 
