@@ -18,6 +18,7 @@ from easydict import EasyDict as edict
 from models import DiT
 import numpy as np
 
+from vae_model import VAE
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
@@ -41,17 +42,41 @@ def main(args):
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # VAE model and stats loading
+    vae_model_list = nn.ModuleList()
+    vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
+    vae_std_loaded = np.load(args.vae_std)
+    vae_std_list = [
+                    torch.from_numpy(vae_std_loaded["std0"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    ]
+
+    for l in range(3):
+        in_ch = dataset.get_level_vec_len(l)
+        hidden_size = int(in_ch * 8)
+        latent_dim = in_ch // config.vae.latent_ratio
+        vae_model = VAE(config.vae.layer_num,
+                        in_ch,
+                        hidden_size,
+                        latent_dim)
+        vae_model.load_state_dict(vae_ckpt["model"][l])
+        vae_model = vae_model.to(device)
+        vae_model_list.append(vae_model)
+    vae_model_list.eval()
+
     # Model
     model_list = []
     for l in range(3):
         # Temp variables
         in_ch = dataset.get_level_vec_len(l)
+        in_ch = in_ch // config.vae.latent_ratio # This is for VAE
         num_heads = config.model.num_heads
-        hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
+        hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
         depth = config.model.depth
         if l == 2:
             hidden_size = hidden_size * 2
-        condition_node_dim = [dim for dim in dataset.get_condition_dim(l)]
+        condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(l)]
 
         # Create model:
         model = DiT(
@@ -109,6 +134,12 @@ def main(args):
 
             # Append the generated latents for the following generation
             xc.append(samples.clip_(0, 1).clone())
+
+            # Rescale and decode
+            samples = samples * vae_std_list[l]
+            samples = samples.reshape(batch_size * length, -1)
+            samples = vae_model_list[l].decode(samples)
+            samples = samples.reshape(batch_size, length, -1)
             decoded.append(samples)
 
             # Get the positions and scales from generated
@@ -138,5 +169,7 @@ if __name__ == "__main__":
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
+    parser.add_argument("--vae-ckpt", type=str, required=True)
+    parser.add_argument("--vae-std", type=str, required=True)
     args = parser.parse_args()
     main(args)

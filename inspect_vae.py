@@ -49,7 +49,7 @@ def main(args):
     for l in range(3):
         in_ch = dataset.get_level_vec_len(l)
         latent_dim = in_ch // config.vae.latent_ratio
-        hidden_size = int(in_ch * 8)
+        hidden_size = int(in_ch * 16)
         vae_model = VAE(config.vae.layer_num,
                         in_ch,
                         hidden_size,
