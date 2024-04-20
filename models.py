@@ -42,11 +42,6 @@ class PreviousNodeEmbedder(nn.Module):
         self.PEV = PEV # Positional embedding version
 
         for i, nd in enumerate(node_dim):
-            #TODO: encode the positions here using NeRF style positional encoding!
-            if i == 0:
-                nd = nd + 10 * 16 * 2 - 10
-            else:
-                nd = nd + 6 * 16 * 2 - 6
             self.mlp_list.append(
                 nn.Sequential(
                 nn.Linear(nd, hidden_size, bias=True),
@@ -61,12 +56,6 @@ class PreviousNodeEmbedder(nn.Module):
             if self.PEV != "v2":
                 out = mlp(n) + pe
             else:
-                if i == 0:
-                    pe = positional_encode(n[:, :, -10:] * 2.0 - 1.0, 16)
-                    n = torch.cat([n[:, :, :-10], pe], dim=-1)
-                else:
-                    pe = positional_encode(n[:, :, -6:] * 2.0 - 1.0, 16)
-                    n = torch.cat([n[:, :, :-6], pe], dim=-1)
                 out = mlp(n)
             embedded_out.append(out)
         return embedded_out

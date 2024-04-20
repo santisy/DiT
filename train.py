@@ -29,6 +29,7 @@ import shutil
 import json
 
 from models import DiT
+from vae_model import VAE
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
 
@@ -143,14 +144,37 @@ def main(args):
     # Create dataset
     dataset = OFLAGDataset(args.data_root, **config.data)
 
+    # Prepare VAE model
+    vae_model_list = nn.ModuleList()
+    vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
+    vae_std_loaded = np.load(args.vae_std)
+    vae_std_list = [
+                    torch.from_numpy(vae_std_loaded["std0"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
+                    ]
+    for l in range(3):
+        in_ch = dataset.get_level_vec_len(l)
+        hidden_size = int(in_ch * 16)
+        latent_dim = in_ch // config.vae.latent_ratio
+        vae_model = VAE(config.vae.layer_num,
+                        in_ch,
+                        hidden_size,
+                        latent_dim)
+        vae_model.load_state_dict(vae_ckpt["model"][l])
+        vae_model = vae_model.to(device)
+        vae_model_list.append(vae_model)
+    vae_model_list.eval()
+
     # Temp variables
     in_ch = dataset.get_level_vec_len(level_num)
+    in_ch = in_ch // config.vae.latent_ratio # This is for VAE
     num_heads = config.model.num_heads
-    hidden_size = int(np.ceil((in_ch * 4) / float(num_heads)) * num_heads)
+    hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
     depth = config.model.depth
     if level_num == 2:
         hidden_size = hidden_size * 2
-    condition_node_dim = [dim for dim in dataset.get_condition_dim(level_num)]
+    condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(level_num)]
 
     # Create DiT model
     model = DiT(
@@ -224,9 +248,10 @@ def main(args):
         for x0, x1, x2, p0, p1, p2, y in loader:
 
             # To device, encode VAE and divide the per-element statistics
-            x0 = x0.to(device)
-            x1 = x1.to(device)
-            x2 = x2.to(device)
+            with torch.no_grad():
+                x0 = vae_model_list[0].encode_and_reparam(x0.to(device)) / vae_std_list[0]
+                x1 = vae_model_list[1].encode_and_reparam(x1.to(device)) / vae_std_list[1]
+                x2 = vae_model_list[2].encode_and_reparam(x2.to(device)) / vae_std_list[2]
 
             p0 = p0.to(device)
             p1 = p1.to(device)
@@ -239,29 +264,21 @@ def main(args):
                 a = []
                 xc = []
                 positions = []
-                weighting_mask = torch.ones_like(x)
-                weighting_mask[:, :, -18:] *= 20
             elif level_num == 1:
                 x = x1
                 xc = [x0,]
                 a = [torch.rand((x.shape[0],)).to(device),]
                 positions = [p0,]
-                weighting_mask = torch.ones_like(x)
-                weighting_mask[:, :, -14:] *= 10
             elif level_num == 2:
                 x = x2
                 xc = [x0, x1]
                 a = [torch.rand((x.shape[0],)).to(device),
                      torch.rand((x.shape[0],)).to(device)]
                 positions = [p0, p1]
-                weighting_mask = torch.ones_like(x)
-                weighting_mask[:, :, -14:] *= 10
 
-            weighting_mask = weighting_mask / 2.0
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             loss_dict = diffusion.training_losses(model, x, t,
-                                                  weighting_mask=weighting_mask,
                                                   model_kwargs=model_kwargs)
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
@@ -336,6 +353,10 @@ if __name__ == "__main__":
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--level-num", type=int, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
+
+    # VAE related
+    parser.add_argument("--vae-std", type=str, required=True)
+    parser.add_argument("--vae-ckpt", type=str, required=True)
 
     args = parser.parse_args()
     main(args)

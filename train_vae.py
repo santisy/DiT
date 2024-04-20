@@ -150,11 +150,12 @@ def main(args):
 
     for l in range(3):
         in_ch = dataset.get_level_vec_len(l)
+        latent_dim = in_ch // config.vae.latent_ratio
+        hidden_size = int(in_ch * 16)
         model = VAE(config.vae.layer_num,
-		    in_ch,
-                    in_ch * 16,
-                    in_ch // config.vae.latent_ratio 
-                    )
+                    in_ch,
+                    hidden_size,
+                    latent_dim)
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
