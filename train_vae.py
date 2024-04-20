@@ -133,6 +133,7 @@ def main(args):
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger = create_logger(run_dir)
         logger.info(f"Experiment directory created at {run_dir}")
+        val_record = open(os.path.join(run_dir, "val_record.txt"), "w")
         # Backup the yaml config file
         shutil.copy(args.config_file, local_dir)
         # Dump the runtime args
@@ -142,7 +143,9 @@ def main(args):
         logger = create_logger(None)
 
     # Create dataset
-    dataset = OFLAGDataset(args.data_root, **config.data)
+    dataset = OFLAGDataset(args.data_root, validate_num=10, **config.data)
+    val_dataset = OFLAGDataset(args.data_root, validate_num=10, validate_flag=True,
+                               **config.data)
 
     # Temp variables
     model_list = nn.ModuleList()
@@ -267,6 +270,24 @@ def main(args):
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
                     if args.work_on_tmp_dir:
                         copy_back_fn(checkpoint_path, local_dir)
+                    # Calculate validation error
+                    val_loss = 0
+                    for i in range(len(val_dataset)):
+                        x0, x1, x2, _, _, _, _ in val_dataset[i]
+                        x0 = x0.unsqueeze(dim=0).to(device)
+                        x1 = x1.unsqueeze(dim=0).to(device)
+                        x2 = x2.unsqueeze(dim=0).to(device)
+                        with torch.no_grad():
+                            x0_rec, _, _ = ema_list[0](x0)
+                            val_loss += (x0_rec - x0).abs().mean()
+                            x1_rec, _, _ = ema_list[1](x1)
+                            val_loss += (x1_rec - x1).abs().mean()
+                            x2_rec, _, _ = ema_list[2](x2)
+                            val_loss += (x2_rec - x2).abs().mean()
+                    val_loss = val_loss / (len(val_dataset) * 3)
+                    val_record.write(f"Step {train_steps}:\t{val_loss.cpu().item():.4f}\n")
+                    val_record.flush()
+
                 dist.barrier()
 
         if not args.no_lr_decay:
@@ -276,6 +297,7 @@ def main(args):
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
 
     logger.info("Done!")
+    val_record.close()
     cleanup()
 
 

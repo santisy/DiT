@@ -12,6 +12,8 @@ class OFLAGDataset(Dataset):
                  octree_root_num: int=64,
                  unit_length_list = [361, 139, 139],
                  only_infer=False,
+                 validate_num=0,
+                 validate_flag=False,
                  ** kwargs):
         super().__init__()
 
@@ -28,7 +30,16 @@ class OFLAGDataset(Dataset):
         file_paths = glob.glob(os.path.join(data_root, "*.bin"))
         if not only_infer:
             file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
-        self.file_paths = file_paths
+
+        # Split the dataset to validate one if required
+        if validate_flag:
+            assert validate_num > 0
+            self.file_paths = file_paths[-validate_num:]
+        else:
+            if validate_num > 0:
+                self.file_paths = file_paths[:-validate_num]
+            else:
+                self.file_paths = file_paths
 
     def __len__(self):
         return len(self.file_paths)
