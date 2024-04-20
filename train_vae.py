@@ -166,7 +166,7 @@ def main(args):
         ema_list.append(ema)
 
         # Put DDP on this
-        model = DDP(model.to(device), device_ids=[rank], find_unused_parameters=True)
+        model = DDP(model.to(device), device_ids=[rank])
         model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
@@ -273,7 +273,7 @@ def main(args):
                     # Calculate validation error
                     val_loss = 0
                     for i in range(len(val_dataset)):
-                        x0, x1, x2, _, _, _, _ in val_dataset[i]
+                        x0, x1, x2, _, _, _, _ = val_dataset[i]
                         x0 = x0.unsqueeze(dim=0).to(device)
                         x1 = x1.unsqueeze(dim=0).to(device)
                         x2 = x2.unsqueeze(dim=0).to(device)
