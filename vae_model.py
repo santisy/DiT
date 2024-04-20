@@ -9,22 +9,103 @@ class VAE(nn.Module):
                  input_dim,
                  hidden_dim,
                  latent_dim,
+                 level_num=0
                  ):
+
         super(VAE, self).__init__()
         # Encoder
         self.input_fc = nn.Linear(input_dim, hidden_dim)
-        self.fc1 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.GroupNorm(16, hidden_dim)] for _ in range(layer_n)])
+        self.level_num = level_num
+        self.grid_m = 7 if level_num == 0 else 5
+        
+        hidden_count = 0
+
+        # Grid values encode branch
+        self.hidden_v = hidden_v = self.grid_m ** 3 * 16
+        fc_grid_v_encode = [nn.Linear(self.grid_m ** 3, hidden_v)]
+        fc_grid_v_encode = fc_grid_v_encode + [x for x in [nn.GELU(), nn.Linear(hidden_v, hidden_v), nn.LayerNorm(hidden_v)] for _ in range(layer_n // 2)] 
+        self.fc_grid_v_encode = nn.Sequential(*fc_grid_v_encode)
+        fc_grid_v_decode = [x for x in [nn.GELU(), nn.Linear(hidden_v, hidden_v), nn.LayerNorm(hidden_v)] for _ in range(layer_n // 2)] 
+        fc_grid_v_decode = fc_grid_v_decode + [nn.Linear(hidden_v, self.grid_m ** 3), nn.Sigmoid()]
+        self.fc_grid_v_decode = nn.Sequential(*fc_grid_v_decode)
+        hidden_count += hidden_v
+
+        # Grid orientation (angular encoded)
+        self.hidden_a = hidden_a = 256
+        fc_grid_a_encode = [nn.Linear(8, hidden_a)]
+        fc_grid_a_encode = fc_grid_a_encode + [x for x in [nn.GELU(), nn.Linear(hidden_a, hidden_a), nn.LayerNorm(hidden_a)] for _ in range(layer_n // 2)] 
+        self.fc_grid_a_encode = nn.Sequential(*fc_grid_a_encode)
+        fc_grid_a_decode = [x for x in [nn.GELU(), nn.Linear(hidden_a, hidden_a), nn.LayerNorm(hidden_a)] for _ in range(layer_n // 2)] 
+        fc_grid_a_decode = fc_grid_a_decode + [nn.Linear(hidden_a, 8), nn.Sigmoid()]
+        self.fc_grid_a_decode = nn.Sequential(*fc_grid_a_decode)
+        hidden_count += hidden_a
+
+        # Grid scale encode branch
+        self.hidden_s = hidden_s = 256
+        fc_grid_s_encode = [nn.Linear(3, hidden_s)]
+        fc_grid_s_encode = fc_grid_s_encode + [x for x in [nn.GELU(), nn.Linear(hidden_s, hidden_s), nn.LayerNorm(hidden_s)] for _ in range(layer_n // 2)] 
+        self.fc_grid_s_encode = nn.Sequential(*fc_grid_s_encode)
+        fc_grid_s_decode = [x for x in [nn.GELU(), nn.Linear(hidden_s, hidden_s), nn.LayerNorm(hidden_s)] for _ in range(layer_n // 2)] 
+        fc_grid_s_decode = fc_grid_s_decode + [nn.Linear(hidden_s, 3), nn.Sigmoid()]
+        self.fc_grid_s_decode = nn.Sequential(*fc_grid_s_decode)
+        hidden_count += hidden_s
+
+        # Grid positions
+        self.hidden_p = hidden_p = 256
+        fc_grid_p_encode = [nn.Linear(3, hidden_p)]
+        fc_grid_p_encode = fc_grid_p_encode + [x for x in [nn.GELU(), nn.Linear(hidden_p, hidden_p), nn.LayerNorm(hidden_p)] for _ in range(layer_n // 2)] 
+        self.fc_grid_p_encode = nn.Sequential(*fc_grid_p_encode)
+        fc_grid_p_decode = [x for x in [nn.GELU(), nn.Linear(hidden_p, hidden_p), nn.LayerNorm(hidden_p)] for _ in range(layer_n // 2)] 
+        fc_grid_p_decode = fc_grid_p_decode + [nn.Linear(hidden_p, 3), nn.Sigmoid()]
+        self.fc_grid_p_decode = nn.Sequential(*fc_grid_p_decode)
+        hidden_count += hidden_p
+
+        if level_num == 0:
+            self.hidden_vp = hidden_vp = 256
+            fc_voxel_p_encode = [nn.Linear(3, hidden_vp)]
+            fc_voxel_p_encode = fc_voxel_p_encode + [x for x in [nn.GELU(), nn.Linear(hidden_vp, hidden_vp), nn.LayerNorm(hidden_vp)] for _ in range(layer_n // 2)] 
+            self.fc_voxel_p_encode = nn.Sequential(*fc_voxel_p_encode)
+            fc_voxel_p_decode = [x for x in [nn.GELU(), nn.Linear(hidden_vp, hidden_vp), nn.LayerNorm(hidden_vp)] for _ in range(layer_n // 2)] 
+            fc_voxel_p_decode = fc_voxel_p_decode + [nn.Linear(hidden_vp, 3), nn.Sigmoid()]
+            self.fc_voxel_p_decode = nn.Sequential(*fc_voxel_p_decode)
+            hidden_count += hidden_vp
+
+            self.hidden_vl = hidden_vl = 128
+            fc_voxel_l_encode = [nn.Linear(1, hidden_vl)]
+            fc_voxel_l_encode = fc_voxel_l_encode + [x for x in [nn.GELU(), nn.Linear(hidden_vl, hidden_vl), nn.LayerNorm(hidden_vl)] for _ in range(layer_n // 2)] 
+            self.fc_voxel_l_encode = nn.Sequential(*fc_voxel_l_encode)
+            fc_voxel_l_decode = [x for x in [nn.GELU(), nn.Linear(hidden_vl, hidden_vl), nn.LayerNorm(hidden_vl)] for _ in range(layer_n // 2)] 
+            fc_voxel_l_decode = fc_voxel_l_decode + [nn.Linear(hidden_vl, 1), nn.Sigmoid()]
+            self.fc_voxel_l_decode = nn.Sequential(*fc_voxel_l_decode)
+            hidden_count += hidden_vl
+
+        self.combined_fc = nn.Linear(hidden_count, hidden_dim)
+        self.fc_combined_encode = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for i in range(layer_n // 2)])
+        self.fc_combined_decode = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for i in range(layer_n // 2)])
+        self.split_fc = nn.Linear(hidden_dim, hidden_count)
+
         self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
         self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
-        # Decoder
-        self.fc3 = nn.Linear(latent_dim, hidden_dim)
-        self.fc4 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.GroupNorm(16, hidden_dim)] for _ in range(layer_n)])
-        self.output_fc = nn.Sequential(nn.Linear(hidden_dim, input_dim),
-                                       nn.Sigmoid())
+        self.map_back = nn.Linear(latent_dim, hidden_dim)
 
     def encode(self, x):
-        x = self.input_fc(x)
-        h = self.fc1(x)
+        encode_collect = []
+        if self.level_num == 0: 
+            encode_collect.append(self.fc_grid_v_encode(x[:, :self.grid_m ** 3]))
+            encode_collect.append(self.fc_grid_a_encode(x[:, self.grid_m ** 3: self.grid_m ** 3 + 8]))
+            encode_collect.append(self.fc_grid_s_encode(x[:, self.grid_m ** 3 + 8: self.grid_m ** 3 + 11]))
+            encode_collect.append(self.fc_voxel_l_encode(x[:, self.grid_m ** 3 + 11: self.grid_m ** 3 + 12]))
+            encode_collect.append(self.fc_grid_p_encode(x[:, self.grid_m ** 3 + 12: self.grid_m ** 3 + 15]))
+            encode_collect.append(self.fc_voxel_p_encode(x[:, self.grid_m ** 3 + 15: self.grid_m ** 3 + 18]))
+        else:
+            encode_collect.append(self.fc_grid_v_encode(x[:, :self.grid_m ** 3]))
+            encode_collect.append(self.fc_grid_a_encode(x[:, self.grid_m ** 3: self.grid_m ** 3 + 8]))
+            encode_collect.append(self.fc_grid_s_encode(x[:, self.grid_m ** 3 + 8: self.grid_m ** 3 + 11]))
+            encode_collect.append(self.fc_grid_p_encode(x[:, self.grid_m ** 3 + 11: self.grid_m ** 3 + 14]))
+
+        h = self.combined_fc(torch.cat(encode_collect, dim=1))
+        h = self.fc_combined_encode(h)
+
         return self.fc2_mean(h), self.fc2_logvar(h)
 
     def reparameterize(self, mean, logvar):
@@ -33,9 +114,34 @@ class VAE(nn.Module):
         return mean + eps*std
 
     def decode(self, z):
-        h = self.fc3(z)
-        h = self.fc4(h)
-        return self.output_fc(h)
+        h = self.map_back(z)
+        h = self.fc_combined_decode(h)
+        h = self.split_fc(h)
+        out_collect = []
+        if self.level_num == 0: 
+            hc = 0
+            out_collect.append(self.fc_grid_v_encode(h[:, hc: hc + self.hidden_v]))
+            hc += self.hidden_v
+            out_collect.append(self.fc_grid_a_encode(h[:, hc: hc + self.hidden_a]))
+            hc += self.hidden_a
+            out_collect.append(self.fc_grid_s_encode(h[:, hc: hc + self.hidden_s]))
+            hc += self.hidden_s
+            out_collect.append(self.fc_voxel_l_encode(h[:, hc: hc + self.hidden_vl]))
+            hc += self.hidden_vl
+            out_collect.append(self.fc_grid_p_encode(h[:, hc: hc + self.hidden_p]))
+            hc += self.hidden_p
+            out_collect.append(self.fc_voxel_p_encode(h[:, hc: hc + self.hidden_vp]))
+        else:
+            hc = 0
+            out_collect.append(self.fc_grid_v_encode(h[:, hc: hc + self.hidden_v]))
+            hc += self.hidden_v
+            out_collect.append(self.fc_grid_a_encode(h[:, hc: hc + self.hidden_a]))
+            hc += self.hidden_a
+            out_collect.append(self.fc_grid_s_encode(h[:, hc: hc + self.hidden_s]))
+            hc += self.hidden_s
+            out_collect.append(self.fc_grid_p_encode(h[:, hc: hc + self.hidden_p]))
+
+        return torch.cat(out_collect, dim=1)
 
     def encode_and_reparam(self, x):
         B, L, C = x.shape
