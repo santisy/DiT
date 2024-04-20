@@ -133,7 +133,8 @@ def main(args):
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger = create_logger(run_dir)
         logger.info(f"Experiment directory created at {run_dir}")
-        val_record = open(os.path.join(run_dir, "val_record.txt"), "w")
+        val_record_file = os.path.join(run_dir, "val_record.txt")
+        val_record = open(val_record_file, "w")
         # Backup the yaml config file
         shutil.copy(args.config_file, local_dir)
         # Dump the runtime args
@@ -268,8 +269,6 @@ def main(args):
                     checkpoint_path = os.path.join(checkpoint_dir, f"vae_{train_steps:07d}.pt")
                     torch.save(checkpoint, checkpoint_path)
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
-                    if args.work_on_tmp_dir:
-                        copy_back_fn(checkpoint_path, local_dir)
                     # Calculate validation error
                     val_loss = 0
                     for i in range(len(val_dataset)):
@@ -287,6 +286,9 @@ def main(args):
                     val_loss = val_loss / (len(val_dataset) * 3)
                     val_record.write(f"Step {train_steps}:\t{val_loss.cpu().item():.4f}\n")
                     val_record.flush()
+                    if args.work_on_tmp_dir:
+                        copy_back_fn(checkpoint_path, local_dir)
+                        copy_back_fn(val_record_file, local_dir)
 
                 dist.barrier()
 
