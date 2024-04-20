@@ -14,7 +14,6 @@ class VAE(nn.Module):
 
         super(VAE, self).__init__()
         # Encoder
-        self.input_fc = nn.Linear(input_dim, hidden_dim)
         self.level_num = level_num
         self.grid_m = 7 if level_num == 0 else 5
         
@@ -206,14 +205,12 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    vae = VAE(128, 32)
+    vae = VAE(4, 361, 64, 128, 0)
     #print(vae)
-    input_data = torch.randn(16, 128)
+    input_data = torch.randn(1, 4, 361)
     output_data, mean, logvar = vae(input_data)
-    loss = loss_function(input_data, output_data, mean, logvar)
-    print(loss)
-
-    latent = vae.encode_and_reparam(input_data)
-    print(f"latent shape is {latent.shape}")
-    out = vae.decode(latent)
-    print(f"Output data is {out.shape}")
+    loss = loss_function(input_data, output_data, mean, logvar, 18, 40)
+    loss.sum().backward() 
+    for name, param in vae.named_parameters():
+        if param.grad is None:
+            print(f"Parameter {name} did not receive gradients.")
