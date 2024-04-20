@@ -28,7 +28,7 @@ import os
 import shutil
 import json
 
-from vae_model import VAE, loss_function
+from vae_model import VAE, VAEVanilla, loss_function
 from torch.optim.lr_scheduler import StepLR
 
 from data.ofalg_dataset import OFLAGDataset
@@ -156,11 +156,18 @@ def main(args):
         in_ch = dataset.get_level_vec_len(l)
         latent_dim = in_ch // config.vae.latent_ratio
         hidden_size = int(in_ch * 16)
-        model = VAE(config.vae.layer_num,
-                    in_ch,
-                    hidden_size,
-                    latent_dim,
-                    level_num=l)
+        if not args.ablate_va:
+            model = VAE(config.vae.layer_num,
+                        in_ch,
+                        hidden_size,
+                        latent_dim,
+                        level_num=l)
+        else:
+            model = VAEVanilla(config.vae.layer_num,
+                               in_ch,
+                               hidden_size,
+                               latent_dim,
+                               level_num=l)
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -320,6 +327,7 @@ if __name__ == "__main__":
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
+    parser.add_argument("--ablate_va", action="store_true")
     parser.add_argument("--work-on-tmp-dir", action="store_true")
 
     args = parser.parse_args()
