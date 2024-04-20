@@ -59,7 +59,8 @@ def main(args):
         vae_model = VAE(config.vae.layer_num,
                         in_ch,
                         hidden_size,
-                        latent_dim)
+                        latent_dim,
+                        level_num=l)
         vae_model.load_state_dict(vae_ckpt["model"][l])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
