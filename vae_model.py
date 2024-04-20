@@ -120,26 +120,26 @@ class VAE(nn.Module):
         out_collect = []
         if self.level_num == 0: 
             hc = 0
-            out_collect.append(self.fc_grid_v_encode(h[:, hc: hc + self.hidden_v]))
+            out_collect.append(self.fc_grid_v_decode(h[:, hc: hc + self.hidden_v]))
             hc += self.hidden_v
-            out_collect.append(self.fc_grid_a_encode(h[:, hc: hc + self.hidden_a]))
+            out_collect.append(self.fc_grid_a_decode(h[:, hc: hc + self.hidden_a]))
             hc += self.hidden_a
-            out_collect.append(self.fc_grid_s_encode(h[:, hc: hc + self.hidden_s]))
+            out_collect.append(self.fc_grid_s_decode(h[:, hc: hc + self.hidden_s]))
             hc += self.hidden_s
-            out_collect.append(self.fc_voxel_l_encode(h[:, hc: hc + self.hidden_vl]))
+            out_collect.append(self.fc_voxel_l_decode(h[:, hc: hc + self.hidden_vl]))
             hc += self.hidden_vl
-            out_collect.append(self.fc_grid_p_encode(h[:, hc: hc + self.hidden_p]))
+            out_collect.append(self.fc_grid_p_decode(h[:, hc: hc + self.hidden_p]))
             hc += self.hidden_p
-            out_collect.append(self.fc_voxel_p_encode(h[:, hc: hc + self.hidden_vp]))
+            out_collect.append(self.fc_voxel_p_decode(h[:, hc: hc + self.hidden_vp]))
         else:
             hc = 0
-            out_collect.append(self.fc_grid_v_encode(h[:, hc: hc + self.hidden_v]))
+            out_collect.append(self.fc_grid_v_decode(h[:, hc: hc + self.hidden_v]))
             hc += self.hidden_v
-            out_collect.append(self.fc_grid_a_encode(h[:, hc: hc + self.hidden_a]))
+            out_collect.append(self.fc_grid_a_decode(h[:, hc: hc + self.hidden_a]))
             hc += self.hidden_a
-            out_collect.append(self.fc_grid_s_encode(h[:, hc: hc + self.hidden_s]))
+            out_collect.append(self.fc_grid_s_decode(h[:, hc: hc + self.hidden_s]))
             hc += self.hidden_s
-            out_collect.append(self.fc_grid_p_encode(h[:, hc: hc + self.hidden_p]))
+            out_collect.append(self.fc_grid_p_decode(h[:, hc: hc + self.hidden_p]))
 
         return torch.cat(out_collect, dim=1)
 

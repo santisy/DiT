@@ -155,7 +155,8 @@ def main(args):
         model = VAE(config.vae.layer_num,
                     in_ch,
                     hidden_size,
-                    latent_dim)
+                    latent_dim,
+                    level_num=l)
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
