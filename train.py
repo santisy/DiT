@@ -162,7 +162,7 @@ def main(args):
                         hidden_size,
                         latent_dim,
                         level_num=l)
-        vae_model.load_state_dict(vae_ckpt["model"][l])
+        vae_model.load_state_dict(vae_ckpt["ema"][l])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
