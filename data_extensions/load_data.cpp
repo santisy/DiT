@@ -78,9 +78,9 @@ void loadFromFile(std::ifstream& file,
         // Do the angular encoding conversion
         data = data + 7 * 7 * 7 + 2;
         float theta1 = atan2(data[1], data[0]);
-        float phi1 = atan2(sqrtf(data[0] * data[0] + data[1] * data[1]), data[2]);
+        float phi1 = atan2(data[2], sqrtf(data[0] * data[0] + data[1] * data[1]));
         float theta2 = atan2(data[4], data[3]);
-        float phi2 = atan2(sqrtf(data[3] * data[3] + data[4] * data[4]), data[5]);
+        float phi2 = atan2(data[5], sqrtf(data[3] * data[3] + data[4] * data[4]));
         out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7}, sinf(theta1));
         out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 1}, cosf(theta1));
         out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 2}, sinf(phi1));
@@ -139,9 +139,9 @@ void loadFromFileAndAssignPos(std::ifstream& file,
         // Do the angular encoding conversion
         data = data + 5 * 5 * 5 + 2;
         float theta1 = atan2(data[1], data[0]);
-        float phi1 = atan2(sqrtf(data[0] * data[0] + data[1] * data[1]), data[2]);
+        float phi1 = atan2(data[2], sqrtf(data[0] * data[0] + data[1] * data[1]));
         float theta2 = atan2(data[4], data[3]);
-        float phi2 = atan2(sqrtf(data[3] * data[3] + data[4] * data[4]), data[5]);
+        float phi2 = atan2(data[5], sqrtf(data[3] * data[3] + data[4] * data[4]));
         out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5}, sinf(theta1));
         out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 1}, cosf(theta1));
         out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 2}, sinf(phi1));
