@@ -32,6 +32,7 @@ from vae_model import VAE, VAEVanilla, loss_function
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
+from torch.optim.lr_scheduler import StepLR
 
 
 #################################################################################
@@ -187,11 +188,8 @@ def main(args):
         model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW([ {'params': model_list[0].parameters(), 'lr': 0.0001},  # Learning rate for the first network
-                              {'params': model_list[1].parameters(), 'lr': 0.00015}, # Learning rate for the second network
-                              {'params': model_list[2].parameters(), 'lr': 0.0002} # Learning rate for the third network
-                            ], lr=0.0002)
-
+    opt = torch.optim.AdamW(model_list.parameters(), lr=0.0002)
+    scheduler = StepLR(opt, step_size=1, gamma=0.999)
 
     sampler = DistributedSampler(
         dataset,
@@ -234,7 +232,7 @@ def main(args):
             x0 = random_sample_and_reshape(x0.to(device), 64)
             x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.1)
+            x2 = random_sample_and_reshape(x2.to(device), 512, zero_ratio=0.1)
             x_list = [x0, x1, x2]
 
             loss = 0
@@ -267,6 +265,7 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
+                log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
@@ -307,6 +306,8 @@ def main(args):
                         copy_back_fn(val_record_file, local_dir)
 
                 dist.barrier()
+
+        scheduler.step()
 
     model_list.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
