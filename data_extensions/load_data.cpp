@@ -259,11 +259,13 @@ void dumpToBin(std::string outPath,
     std::vector<at::Tensor> level1_out;
     std::vector<at::Tensor> level2_out;
 
+    // TODO: Here is some bug
+
     for (int i = 0; i < octreeRootNum; i++){
         if (at::sum(at::abs(level0.index({i, at::indexing::Slice(-18, -10)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l0_out_with_pc = at::zeros({level0.size(1) + 2});
+        at::Tensor l0_out_with_pc = at::zeros({level0.size(1)});
         l0_out_with_pc[0] = i; // Children index
         l0_out_with_pc[1] = -1;
         l0_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level0.index({i}), 7));
@@ -274,7 +276,7 @@ void dumpToBin(std::string outPath,
         if (at::sum(at::abs(level1.index({i, at::indexing::Slice(-14, -6)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l1_out_with_pc = at::zeros({level1.size(1) + 2});
+        at::Tensor l1_out_with_pc = at::zeros({level1.size(1)});
         l1_out_with_pc[0] = i % 8 ; // Children index
         l1_out_with_pc[1] = i / 8;
         l1_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level1.index({i}), 5));
@@ -285,7 +287,7 @@ void dumpToBin(std::string outPath,
         if (at::sum(at::abs(level2.index({i, at::indexing::Slice(-14, -6)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l2_out_with_pc = at::zeros({level2.size(1) + 2});
+        at::Tensor l2_out_with_pc = at::zeros({level2.size(1)});
         l2_out_with_pc[0] = i % 8 ; // Children index
         l2_out_with_pc[1] = i / 8;
         l2_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level2.index({i}), 5));

@@ -56,7 +56,7 @@ def main(args):
                         hidden_size,
                         latent_dim,
                         level_num=l)
-        vae_model.load_state_dict(vae_ckpt["ema"][l])
+        vae_model.load_state_dict(vae_ckpt["model"][l])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
         online_variance_list.append(OnlineVariance(latent_dim))
@@ -74,6 +74,8 @@ def main(args):
                 x0_rec, _, _ = vae_model_list[0](x0)
                 x1_rec, _, _ = vae_model_list[1](x1)
                 x2_rec, _, _ = vae_model_list[2](x2)
+                loss = (x0 - x0_rec).abs().mean()
+                print(loss)
                 x0 = dataset.denormalize(x0_rec[0], 0).detach().cpu()
                 x1 = dataset.denormalize(x1_rec[0], 1).detach().cpu()
                 x2 = dataset.denormalize(x2_rec[0], 2).detach().cpu()
@@ -104,6 +106,6 @@ if __name__ == "__main__":
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--export-out", type=str, required=True)
-    parser.add_argument("--inspect_recon", action="store_true")
+    parser.add_argument("--inspect-recon", action="store_true")
     args = parser.parse_args()
     main(args)

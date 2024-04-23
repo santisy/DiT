@@ -231,8 +231,8 @@ def main(args):
         for x0, x1, x2, _, _, _, _ in loader:
 
             # To device
-            x0 = random_sample_and_reshape(x0.to(device), 32)
-            x1 = random_sample_and_reshape(x1.to(device), 128)
+            x0 = random_sample_and_reshape(x0.to(device), 64)
+            x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
             x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.1)
             x_list = [x0, x1, x2]
