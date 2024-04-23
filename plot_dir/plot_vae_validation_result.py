@@ -12,9 +12,8 @@ def parse_validation_log_file(log_file):
                 parts = line.split()
                 step = int(parts[1].strip(':'))
                 loss = float(parts[2])
-                if step % 10000 == 0:
-                    steps.append(step)
-                    losses.append(loss)
+                steps.append(step)
+                losses.append(loss)
     return steps, losses
 
 def main(log_files):

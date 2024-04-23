@@ -85,11 +85,21 @@ def create_logger(logging_dir):
     return logger
 
 
-def random_sample_and_reshape(x, l):
+def random_sample_and_reshape(x, l, zero_ratio=None):
     out = []
     for i in range(x.size(0)):
-        indices = torch.randperm(x.size(1))[:l]
-        out.append(x[i, indices, :])
+        if zero_ratio is None:
+            indices = torch.randperm(x.size(1))[:l]
+            out.append(x[i, indices, :])
+        else:
+            assert zero_ratio < 1.0
+            zero_num = int(l * zero_ratio)
+            non_zero_num = l - zero_num
+            zero_indices = torch.where(x[:, -14:-6].sum(dim=1) == 4.0)[0]
+            non_zero_indices = torch.where(x[:, -14:-6].sum(dim=1) != 4.0)[0]
+            out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
+            out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
+
     return torch.cat(out, dim=0).unsqueeze(dim=0)
     
 #################################################################################
@@ -223,7 +233,8 @@ def main(args):
             # To device
             x0 = random_sample_and_reshape(x0.to(device), 32)
             x1 = random_sample_and_reshape(x1.to(device), 128)
-            x2 = random_sample_and_reshape(x2.to(device), 1024)
+            # Do not sample too much zero entries when training VAE
+            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.05)
             x_list = [x0, x1, x2]
 
             loss = 0
