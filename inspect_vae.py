@@ -47,7 +47,7 @@ def main(args):
     vae_model_list = nn.ModuleList()
     online_variance_list = []
     vae_ckpt = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
-    for l in range(3):
+    for l in range(1, 3):
         in_ch = dataset.get_level_vec_len(l)
         latent_dim = in_ch // config.vae.latent_ratio
         hidden_size = int(in_ch * 16)
@@ -56,7 +56,7 @@ def main(args):
                         hidden_size,
                         latent_dim,
                         level_num=l)
-        vae_model.load_state_dict(vae_ckpt["model"][l])
+        vae_model.load_state_dict(vae_ckpt["model"][l - 1])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
         online_variance_list.append(OnlineVariance(latent_dim))
@@ -91,19 +91,16 @@ def main(args):
                 if i > 4:
                     break
             else:
-                latent_0 = vae_model_list[0].encode_and_reparam(x0)
-                latent_1 = vae_model_list[1].encode_and_reparam(x1)
-                latent_2 = vae_model_list[2].encode_and_reparam(x2)
-                online_variance_list[0].update(latent_0[0].detach().cpu())
-                online_variance_list[1].update(latent_1[0].detach().cpu())
-                online_variance_list[2].update(latent_2[0].detach().cpu())
+                latent_1 = vae_model_list[0].encode_and_reparam(x1)
+                latent_2 = vae_model_list[1].encode_and_reparam(x2)
+                online_variance_list[0].update(latent_1[0].detach().cpu())
+                online_variance_list[1].update(latent_2[0].detach().cpu())
 
     if not args.inspect_recon:
         # Dump the statistics
         np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),
-                std0=online_variance_list[0].std,
-                std1=online_variance_list[1].std,
-                std2=online_variance_list[2].std)
+                std1=online_variance_list[0].std,
+                std2=online_variance_list[1].std)
 
 
 if __name__ == "__main__":

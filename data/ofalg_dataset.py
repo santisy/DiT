@@ -68,9 +68,9 @@ class OFLAGDataset(Dataset):
         if level_num == 0:
             return []
         elif level_num == 1:
-            return [self._unit_length0,]
+            return [4,]
         elif level_num == 2:
-            return [self._unit_length0, self._unit_length1]
+            return [4, self._unit_length1]
         else:
             raise ValueError(f"Invalid level number {level_num}.")
 

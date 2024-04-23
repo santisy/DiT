@@ -149,11 +149,10 @@ def main(args):
     vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
     vae_std_loaded = np.load(args.vae_std)
     vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std0"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     ]
-    for l in range(3):
+    for l in range(1, 3):
         in_ch = dataset.get_level_vec_len(l)
         hidden_size = int(in_ch * 16)
         latent_dim = in_ch // config.vae.latent_ratio
@@ -162,17 +161,22 @@ def main(args):
                         hidden_size,
                         latent_dim,
                         level_num=l)
-        vae_model.load_state_dict(vae_ckpt["ema"][l])
+        vae_model.load_state_dict(vae_ckpt["ema"][l - 1])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
 
-    # Temp variables
-    in_ch = dataset.get_level_vec_len(level_num)
-    in_ch = in_ch // config.vae.latent_ratio # This is for VAE
+    # Arch variables
     num_heads = config.model.num_heads
-    hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
     depth = config.model.depth
+    if level_num != 0:
+        in_ch = dataset.get_level_vec_len(level_num)
+        in_ch = in_ch // config.vae.latent_ratio # This is for VAE
+        hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
+    else:
+        in_ch = 4
+        hidden_size = 512
+
     if level_num == 2:
         hidden_size = hidden_size * 2
     condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(level_num)]
@@ -249,10 +253,10 @@ def main(args):
         for x0, x1, x2, p0, p1, p2, y in loader:
 
             # To device, encode VAE and divide the per-element statistics
+            x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1)
             with torch.no_grad():
-                x0 = vae_model_list[0].encode_and_reparam(x0.to(device)) / vae_std_list[0]
-                x1 = vae_model_list[1].encode_and_reparam(x1.to(device)) / vae_std_list[1]
-                x2 = vae_model_list[2].encode_and_reparam(x2.to(device)) / vae_std_list[2]
+                x1 = vae_model_list[0].encode_and_reparam(x1.to(device)) / vae_std_list[0]
+                x2 = vae_model_list[1].encode_and_reparam(x2.to(device)) / vae_std_list[1]
 
             p0 = p0.to(device)
             p1 = p1.to(device)

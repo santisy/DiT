@@ -162,7 +162,7 @@ def main(args):
     model_list = nn.ModuleList()
     ema_list = nn.ModuleList()
 
-    for l in range(3):
+    for l in range(1, 3):
         in_ch = dataset.get_level_vec_len(l)
         latent_dim = in_ch // config.vae.latent_ratio
         hidden_size = int(in_ch * 16)
@@ -189,7 +189,7 @@ def main(args):
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model_list.parameters(), lr=0.0002)
-    scheduler = StepLR(opt, step_size=1, gamma=0.999)
+    scheduler = StepLR(opt, step_size=4, gamma=0.999)
 
     sampler = DistributedSampler(
         dataset,
@@ -226,23 +226,20 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x0, x1, x2, _, _, _, _ in loader:
+        for _, x1, x2, _, _, _, _ in loader:
 
             # To device
-            x0 = random_sample_and_reshape(x0.to(device), 64)
+            #x0 = random_sample_and_reshape(x0.to(device), 64)
             x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 512, zero_ratio=0.1)
-            x_list = [x0, x1, x2]
+            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.1)
+            x_list = [x1, x2]
 
             loss = 0
 
-            for i, (x, model) in enumerate(zip(x_list, model_list)):
+            for _, (x, model) in enumerate(zip(x_list, model_list)):
                 x_rec, mean, logvar = model(x)
-                if i == 0:
-                    loss += loss_function(x_rec, x, mean, logvar, 18, 40)
-                else:
-                    loss += loss_function(x_rec, x, mean, logvar, 14, 20)
+                loss += loss_function(x_rec, x, mean, logvar, 14, 20)
 
             opt.zero_grad()
             loss.backward()
@@ -287,16 +284,13 @@ def main(args):
                     # Calculate validation error
                     val_loss = 0
                     for i in range(len(val_dataset)):
-                        x0, x1, x2, _, _, _, _ = val_dataset[i]
-                        x0 = x0.unsqueeze(dim=0).to(device)
+                        _, x1, x2, _, _, _, _ = val_dataset[i]
                         x1 = x1.unsqueeze(dim=0).to(device)
                         x2 = x2.unsqueeze(dim=0).to(device)
                         with torch.no_grad():
-                            x0_rec, _, _ = ema_list[0](x0)
-                            val_loss += (x0_rec - x0).abs().mean()
-                            x1_rec, _, _ = ema_list[1](x1)
+                            x1_rec, _, _ = ema_list[0](x1)
                             val_loss += (x1_rec - x1).abs().mean()
-                            x2_rec, _, _ = ema_list[2](x2)
+                            x2_rec, _, _ = ema_list[1](x2)
                             val_loss += (x2_rec - x2).abs().mean()
                     val_loss = val_loss / (len(val_dataset) * 3)
                     val_record.write(f"Step {train_steps}:\t{val_loss.cpu().item():.4f}\n")

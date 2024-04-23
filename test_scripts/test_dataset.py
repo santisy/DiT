@@ -7,3 +7,5 @@ x0, x1, x2, _, _, _, _ = dataset[0]
 print(x0.shape)
 print(x1.shape)
 print(x2.shape)
+import pdb; pdb.set_trace()
+print("Checking")
