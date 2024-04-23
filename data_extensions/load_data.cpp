@@ -302,13 +302,13 @@ void dumpToBin(std::string outPath,
     file.write(reinterpret_cast<const char*>(&length2f), sizeof(float));
 
     for (auto &t: level0_out){
-        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level0.size(1) + 2));
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level0.size(1)));
     }
     for (auto &t: level1_out){
-        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level1.size(1) + 2));
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level1.size(1)));
     }
     for (auto &t: level2_out){
-        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level2.size(1) + 2));
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level2.size(1)));
     }
 
     file.close();

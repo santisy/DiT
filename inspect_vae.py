@@ -71,14 +71,21 @@ def main(args):
         x2 = x2.unsqueeze(dim=0).to(device)
         with torch.no_grad():
             if args.inspect_recon:
-                x0_rec, _, _ = vae_model_list[0](x0)
+                #x0_rec, _, _ = vae_model_list[0](x0)
                 x1_rec, _, _ = vae_model_list[1](x1)
                 x2_rec, _, _ = vae_model_list[2](x2)
-                loss = (x0 - x0_rec).abs().mean()
-                print(loss)
-                x0 = dataset.denormalize(x0_rec[0], 0).detach().cpu()
+                #loss0 = (x0 - x0_rec).abs().mean()
+                #loss1 = (x1 - x1_rec).abs().mean()
+                #loss2 = (x2 - x2_rec).abs().mean()
+                #print(f"{loss0},{loss1},{loss2}")
+                #import pdb; pdb.set_trace()
+                #print("Checking")
+                #x0 = dataset.denormalize(x0_rec[0], 0).detach().cpu()
                 x1 = dataset.denormalize(x1_rec[0], 1).detach().cpu()
                 x2 = dataset.denormalize(x2_rec[0], 2).detach().cpu()
+                x0 = dataset.denormalize(x0[0], 0).detach().cpu()
+                #x1 = dataset.denormalize(x1[0], 1).detach().cpu()
+                #x2 = dataset.denormalize(x2[0], 2).detach().cpu()
                 load_utils.dump_to_bin(os.path.join("vae_recon_dir", f"out_{i:04d}.bin"),
                                        x0, x1, x2, dataset.octree_root_num)
                 if i > 4:
