@@ -189,7 +189,7 @@ def main(args):
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model_list.parameters(), lr=0.0002)
-    scheduler = StepLR(opt, step_size=1, gamma=0.999)
+    scheduler = StepLR(opt, step_size=3, gamma=0.999)
 
     sampler = DistributedSampler(
         dataset,
