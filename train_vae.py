@@ -234,7 +234,7 @@ def main(args):
             x0 = random_sample_and_reshape(x0.to(device), 32)
             x1 = random_sample_and_reshape(x1.to(device), 128)
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.1)
+            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.05)
             x_list = [x0, x1, x2]
 
             loss = 0
