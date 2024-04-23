@@ -95,8 +95,8 @@ def random_sample_and_reshape(x, l, zero_ratio=None):
             assert zero_ratio < 1.0
             zero_num = int(l * zero_ratio)
             non_zero_num = l - zero_num
-            zero_indices = torch.where(x[:, -14:-6].sum(dim=1) == 4.0)[0]
-            non_zero_indices = torch.where(x[:, -14:-6].sum(dim=1) != 4.0)[0]
+            zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) == 4.0)[0]
+            non_zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) != 4.0)[0]
             out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
             out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
 
