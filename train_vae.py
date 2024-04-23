@@ -189,7 +189,7 @@ def main(args):
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model_list.parameters(), lr=0.0002)
-    scheduler = StepLR(opt, step_size=4, gamma=0.999)
+    scheduler = StepLR(opt, step_size=3, gamma=0.999)
 
     sampler = DistributedSampler(
         dataset,
@@ -232,7 +232,7 @@ def main(args):
             #x0 = random_sample_and_reshape(x0.to(device), 64)
             x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.1)
+            x2 = random_sample_and_reshape(x2.to(device), 512, zero_ratio=0.1)
             x_list = [x1, x2]
 
             loss = 0
