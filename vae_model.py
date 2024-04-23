@@ -79,12 +79,14 @@ class VAE(nn.Module):
         
         hidden_count = 0
 
+        unit = lambda x: [nn.GELU(), nn.Dropout(0.1), nn.Linear(x, x), nn.LayerNorm(x)]
+
         # Grid values encode branch
-        self.hidden_v = hidden_v = self.grid_m ** 3 * 16
+        self.hidden_v = hidden_v = self.grid_m ** 3 * 16 if level_num != 0 else self.grid_m ** 3 * 8
         fc_grid_v_encode = [nn.Linear(self.grid_m ** 3, hidden_v)]
-        fc_grid_v_encode = fc_grid_v_encode + [x for x in [nn.GELU(), nn.Linear(hidden_v, hidden_v), nn.LayerNorm(hidden_v)] for _ in range(layer_n // 2)] 
+        fc_grid_v_encode = fc_grid_v_encode + [x for x in unit(hidden_v) for _ in range(layer_n // 2)] 
         self.fc_grid_v_encode = nn.Sequential(*fc_grid_v_encode)
-        fc_grid_v_decode = [x for x in [nn.GELU(), nn.Linear(hidden_v, hidden_v), nn.LayerNorm(hidden_v)] for _ in range(layer_n // 2)] 
+        fc_grid_v_decode = [x for x in unit(hidden_v) for _ in range(layer_n // 2)] 
         fc_grid_v_decode = fc_grid_v_decode + [nn.Linear(hidden_v, self.grid_m ** 3), nn.Sigmoid()]
         self.fc_grid_v_decode = nn.Sequential(*fc_grid_v_decode)
         hidden_count += hidden_v
@@ -92,9 +94,9 @@ class VAE(nn.Module):
         # Grid orientation (angular encoded)
         self.hidden_a = hidden_a = 256
         fc_grid_a_encode = [nn.Linear(8, hidden_a)]
-        fc_grid_a_encode = fc_grid_a_encode + [x for x in [nn.GELU(), nn.Linear(hidden_a, hidden_a), nn.LayerNorm(hidden_a)] for _ in range(layer_n // 2)] 
+        fc_grid_a_encode = fc_grid_a_encode + [x for x in unit(hidden_a) for _ in range(layer_n // 2)] 
         self.fc_grid_a_encode = nn.Sequential(*fc_grid_a_encode)
-        fc_grid_a_decode = [x for x in [nn.GELU(), nn.Linear(hidden_a, hidden_a), nn.LayerNorm(hidden_a)] for _ in range(layer_n // 2)] 
+        fc_grid_a_decode = [x for x in unit(hidden_a) for _ in range(layer_n // 2)] 
         fc_grid_a_decode = fc_grid_a_decode + [nn.Linear(hidden_a, 8), nn.Sigmoid()]
         self.fc_grid_a_decode = nn.Sequential(*fc_grid_a_decode)
         hidden_count += hidden_a
@@ -102,9 +104,9 @@ class VAE(nn.Module):
         # Grid scale encode branch
         self.hidden_s = hidden_s = 256
         fc_grid_s_encode = [nn.Linear(3, hidden_s)]
-        fc_grid_s_encode = fc_grid_s_encode + [x for x in [nn.GELU(), nn.Linear(hidden_s, hidden_s), nn.LayerNorm(hidden_s)] for _ in range(layer_n // 2)] 
+        fc_grid_s_encode = fc_grid_s_encode + [x for x in unit(hidden_s) for _ in range(layer_n // 2)] 
         self.fc_grid_s_encode = nn.Sequential(*fc_grid_s_encode)
-        fc_grid_s_decode = [x for x in [nn.GELU(), nn.Linear(hidden_s, hidden_s), nn.LayerNorm(hidden_s)] for _ in range(layer_n // 2)] 
+        fc_grid_s_decode = [x for x in unit(hidden_s) for _ in range(layer_n // 2)] 
         fc_grid_s_decode = fc_grid_s_decode + [nn.Linear(hidden_s, 3), nn.Sigmoid()]
         self.fc_grid_s_decode = nn.Sequential(*fc_grid_s_decode)
         hidden_count += hidden_s
@@ -112,9 +114,9 @@ class VAE(nn.Module):
         # Grid positions
         self.hidden_p = hidden_p = 256
         fc_grid_p_encode = [nn.Linear(3, hidden_p)]
-        fc_grid_p_encode = fc_grid_p_encode + [x for x in [nn.GELU(), nn.Linear(hidden_p, hidden_p), nn.LayerNorm(hidden_p)] for _ in range(layer_n // 2)] 
+        fc_grid_p_encode = fc_grid_p_encode + [x for x in unit(hidden_p) for _ in range(layer_n // 2)] 
         self.fc_grid_p_encode = nn.Sequential(*fc_grid_p_encode)
-        fc_grid_p_decode = [x for x in [nn.GELU(), nn.Linear(hidden_p, hidden_p), nn.LayerNorm(hidden_p)] for _ in range(layer_n // 2)] 
+        fc_grid_p_decode = [x for x in unit(hidden_p) for _ in range(layer_n // 2)] 
         fc_grid_p_decode = fc_grid_p_decode + [nn.Linear(hidden_p, 3), nn.Sigmoid()]
         self.fc_grid_p_decode = nn.Sequential(*fc_grid_p_decode)
         hidden_count += hidden_p
@@ -122,25 +124,25 @@ class VAE(nn.Module):
         if level_num == 0:
             self.hidden_vp = hidden_vp = 256
             fc_voxel_p_encode = [nn.Linear(3, hidden_vp)]
-            fc_voxel_p_encode = fc_voxel_p_encode + [x for x in [nn.GELU(), nn.Linear(hidden_vp, hidden_vp), nn.LayerNorm(hidden_vp)] for _ in range(layer_n // 2)] 
+            fc_voxel_p_encode = fc_voxel_p_encode + [x for x in unit(hidden_vp) for _ in range(layer_n // 2)] 
             self.fc_voxel_p_encode = nn.Sequential(*fc_voxel_p_encode)
-            fc_voxel_p_decode = [x for x in [nn.GELU(), nn.Linear(hidden_vp, hidden_vp), nn.LayerNorm(hidden_vp)] for _ in range(layer_n // 2)] 
+            fc_voxel_p_decode = [x for x in unit(hidden_vp) for _ in range(layer_n // 2)] 
             fc_voxel_p_decode = fc_voxel_p_decode + [nn.Linear(hidden_vp, 3), nn.Sigmoid()]
             self.fc_voxel_p_decode = nn.Sequential(*fc_voxel_p_decode)
             hidden_count += hidden_vp
 
             self.hidden_vl = hidden_vl = 128
             fc_voxel_l_encode = [nn.Linear(1, hidden_vl)]
-            fc_voxel_l_encode = fc_voxel_l_encode + [x for x in [nn.GELU(), nn.Linear(hidden_vl, hidden_vl), nn.LayerNorm(hidden_vl)] for _ in range(layer_n // 2)] 
+            fc_voxel_l_encode = fc_voxel_l_encode + [x for x in unit(hidden_vl) for _ in range(layer_n // 2)] 
             self.fc_voxel_l_encode = nn.Sequential(*fc_voxel_l_encode)
-            fc_voxel_l_decode = [x for x in [nn.GELU(), nn.Linear(hidden_vl, hidden_vl), nn.LayerNorm(hidden_vl)] for _ in range(layer_n // 2)] 
+            fc_voxel_l_decode = [x for x in unit(hidden_vl) for _ in range(layer_n // 2)] 
             fc_voxel_l_decode = fc_voxel_l_decode + [nn.Linear(hidden_vl, 1), nn.Sigmoid()]
             self.fc_voxel_l_decode = nn.Sequential(*fc_voxel_l_decode)
             hidden_count += hidden_vl
 
         self.combined_fc = nn.Linear(hidden_count, hidden_dim)
-        self.fc_combined_encode = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for i in range(layer_n // 2)])
-        self.fc_combined_decode = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for i in range(layer_n // 2)])
+        self.fc_combined_encode = nn.Sequential(*[x for x in unit(hidden_dim) for i in range(layer_n // 2)])
+        self.fc_combined_decode = nn.Sequential(*[x for x in unit(hidden_dim) for i in range(layer_n // 2)])
         self.split_fc = nn.Linear(hidden_dim, hidden_count)
 
         self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
@@ -265,9 +267,9 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    vae = VAEVanilla(4, 361, 64, 128, 0)
+    vae = VAEVanilla(4, 139, 64, 128, 1)
     #print(vae)
-    input_data = torch.randn(1, 4, 361)
+    input_data = torch.randn(1, 4, 139)
     output_data, mean, logvar = vae(input_data)
     loss = loss_function(input_data, output_data, mean, logvar, 18, 40)
     loss.sum().backward() 
