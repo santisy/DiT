@@ -29,7 +29,6 @@ import shutil
 import json
 
 from vae_model import VAE, VAEVanilla, loss_function
-from torch.optim.lr_scheduler import StepLR
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
@@ -188,9 +187,10 @@ def main(args):
         model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model_list.parameters(), lr=2e-4)
-    if not args.no_lr_decay:
-        scheduler = StepLR(opt, step_size=2, gamma=0.999)
+    opt = torch.optim.AdamW([ {'params': model_list[0].parameters(), 'lr': 0.0001},  # Learning rate for the first network
+                              {'params': model_list[1].parameters(), 'lr': 0.00015}, # Learning rate for the second network
+                              {'params': model_list[2].parameters(), 'lr': 0.0002} # Learning rate for the third network
+                            ], lr=0.0002)
 
 
     sampler = DistributedSampler(
@@ -267,8 +267,6 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
-                if not args.no_lr_decay:
-                    log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
@@ -309,9 +307,6 @@ def main(args):
                         copy_back_fn(val_record_file, local_dir)
 
                 dist.barrier()
-
-        if not args.no_lr_decay:
-            scheduler.step()
 
     model_list.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
