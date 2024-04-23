@@ -21,6 +21,7 @@ from tqdm import tqdm
 from vae_model import VAE, OnlineVariance
 import argparse
 from data.ofalg_dataset import OFLAGDataset
+from data_extensions import load_utils
 
 def main(args):
     # Prepare name and directory
@@ -69,32 +70,31 @@ def main(args):
         x1 = x1.unsqueeze(dim=0).to(device)
         x2 = x2.unsqueeze(dim=0).to(device)
         with torch.no_grad():
-            #x0_rec, _, _ = vae_model_list[0](x0)
-            #x1_rec, _, _ = vae_model_list[1](x1)
-            #x2_rec, _, _ = vae_model_list[2](x2)
-            #loss = F.mse_loss(x0_rec, x0, reduction="sum")/ x0.size(1) + \
-            #       F.mse_loss(x1_rec, x1, reduction="sum")/ x1.size(1) + \
-            #       F.mse_loss(x2_rec, x2, reduction="sum")/ x2.size(1)
+            if args.inspect_recon:
+                x0_rec, _, _ = vae_model_list[0](x0)
+                x1_rec, _, _ = vae_model_list[1](x1)
+                x2_rec, _, _ = vae_model_list[2](x2)
+                x0 = dataset.denormalize(x0_rec[0], 0).detach().cpu()
+                x1 = dataset.denormalize(x1_rec[0], 1).detach().cpu()
+                x2 = dataset.denormalize(x2_rec[0], 2).detach().cpu()
+                load_utils.dump_to_bin(os.path.join("vae_recon_dir", f"out_{i:04d}.bin"),
+                                       x0, x1, x2, dataset.octree_root_num)
+                if i > 4:
+                    break
+            else:
+                latent_0 = vae_model_list[0].encode_and_reparam(x0)
+                latent_1 = vae_model_list[1].encode_and_reparam(x1)
+                latent_2 = vae_model_list[2].encode_and_reparam(x2)
+                online_variance_list[0].update(latent_0[0].detach().cpu())
+                online_variance_list[1].update(latent_1[0].detach().cpu())
+                online_variance_list[2].update(latent_2[0].detach().cpu())
 
-            #loss_l1 = F.l1_loss(x0_rec, x0, reduction="sum")/ x0.size(1) + \
-            #       F.l1_loss(x1_rec, x1, reduction="sum")/ x1.size(1) + \
-            #       F.l1_loss(x2_rec, x2, reduction="sum")/ x2.size(1)
-
-            #print(loss, loss_l1)
-            #import pdb; pdb.set_trace()
-
-            latent_0 = vae_model_list[0].encode_and_reparam(x0)
-            latent_1 = vae_model_list[1].encode_and_reparam(x1)
-            latent_2 = vae_model_list[2].encode_and_reparam(x2)
-            online_variance_list[0].update(latent_0[0].detach().cpu())
-            online_variance_list[1].update(latent_1[0].detach().cpu())
-            online_variance_list[2].update(latent_2[0].detach().cpu())
-
-    # Dump the statistics
-    np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),
-             std0=online_variance_list[0].std,
-             std1=online_variance_list[1].std,
-             std2=online_variance_list[2].std)
+    if not args.inspect_recon:
+        # Dump the statistics
+        np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),
+                std0=online_variance_list[0].std,
+                std1=online_variance_list[1].std,
+                std2=online_variance_list[2].std)
 
 
 if __name__ == "__main__":
@@ -104,5 +104,6 @@ if __name__ == "__main__":
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--export-out", type=str, required=True)
+    parser.add_argument("--inspect_recon", action="store_true")
     args = parser.parse_args()
     main(args)
