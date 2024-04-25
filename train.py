@@ -165,6 +165,7 @@ def main(args):
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
+    logger.info("VAE model created and loaded.")
 
     # Arch variables
     num_heads = config.model.num_heads
@@ -175,7 +176,7 @@ def main(args):
         hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
     else:
         in_ch = 4
-        hidden_size = 512
+        hidden_size = 1024
 
     if level_num == 2:
         hidden_size = hidden_size * 2
@@ -206,9 +207,10 @@ def main(args):
     model = DDP(model.to(device), device_ids=[rank])
     diffusion = create_diffusion(timestep_respacing="",
                                  **config.diffusion)
+    logger.info(f"Diffusion model created.")
 
     #vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
-    logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    #logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
@@ -253,10 +255,7 @@ def main(args):
         for x0, x1, x2, p0, p1, p2, y in loader:
 
             # To device, encode VAE and divide the per-element statistics
-            x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1)
-            with torch.no_grad():
-                x1 = vae_model_list[0].encode_and_reparam(x1.to(device)) / vae_std_list[0]
-                x2 = vae_model_list[1].encode_and_reparam(x2.to(device)) / vae_std_list[1]
+            x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
 
             p0 = p0.to(device)
             p1 = p1.to(device)
@@ -270,11 +269,16 @@ def main(args):
                 xc = []
                 positions = []
             elif level_num == 1:
+                with torch.no_grad():
+                    x1 = vae_model_list[0].encode_and_reparam(x1.to(device)) / vae_std_list[0]
                 x = x1
                 xc = [x0,]
                 a = [torch.rand((x.shape[0],)).to(device),]
                 positions = [p0,]
             elif level_num == 2:
+                with torch.no_grad():
+                    x1 = vae_model_list[0].encode_and_reparam(x1.to(device)) / vae_std_list[0]
+                    x2 = vae_model_list[1].encode_and_reparam(x2.to(device)) / vae_std_list[1]
                 x = x2
                 xc = [x0, x1]
                 a = [torch.rand((x.shape[0],)).to(device),
