@@ -69,12 +69,16 @@ def main(args):
     # Model
     model_list = []
     for l in range(3):
-        # Temp variables
-        in_ch = dataset.get_level_vec_len(l)
-        in_ch = in_ch // config.vae.latent_ratio # This is for VAE
         num_heads = config.model.num_heads
-        hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
         depth = config.model.depth
+        # Temp variables
+        if l != 0:
+            in_ch = dataset.get_level_vec_len(l)
+            in_ch = in_ch // config.vae.latent_ratio # This is for VAE
+            hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
+        else:
+            in_ch = 4
+            hidden_size = 1024
         if l == 2:
             hidden_size = hidden_size * 2
         condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(l)]
@@ -118,13 +122,14 @@ def main(args):
         decoded = []
         for l in range(3):
             length = int(dataset.octree_root_num * 8 ** l)
+            ch = dataset.get_level_vec_len(l) // config.vae.latent_ratio if l > 0 else 4
             z = torch.randn(batch_size,
                             length, 
-                            dataset.get_level_vec_len(l) // config.vae.latent_ratio).to(device)
+                            ch).to(device)
             a = [torch.zeros(batch_size).to(device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
-            # Sample images:
+            # Sample
             samples = diffusion.p_sample_loop(model_list[l].forward,
                                               z.shape,
                                               z,
@@ -134,14 +139,22 @@ def main(args):
                                               device=device)
 
             # Append the generated latents for the following generation
-            xc.append(samples.clip_(0, 1).clone())
+            if l == 0:
+                samples = samples.clip_(0, 1)
+            xc.append(samples.clone())
 
-            # Rescale and decode
-            samples = samples * vae_std_list[l]
-            samples = samples.reshape(batch_size * length, -1)
-            samples = vae_model_list[l].decode(samples)
-            samples = samples.reshape(batch_size, length, -1)
-            decoded.append(samples)
+            if l > 0:
+                # Rescale and decode
+                samples = samples * vae_std_list[l]
+                samples = samples.reshape(batch_size * length, -1)
+                samples = vae_model_list[l].decode(samples)
+                samples = samples.reshape(batch_size, length, -1)
+                decoded.append(samples)
+            else:
+                sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to()
+                sample_[:, :, -7] = samples[:, :, 0]
+                sample_[:, :, -3:] = samples[:, :, -3:]
+                decoded.append(sample_.clone())
 
             # Get the positions and scales from generated
             if l > 0:
