@@ -82,6 +82,7 @@ def main(args):
             hidden_size = hidden_size * 2
             num_heads = num_heads * 2
         condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(l)]
+        condition_node_dim[0] = 4
 
         # Create model:
         model = DiT(
