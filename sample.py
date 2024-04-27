@@ -47,21 +47,20 @@ def main(args):
     vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
     vae_std_loaded = np.load(args.vae_std)
     vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std0"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     ]
 
-    for l in range(3):
+    for l in range(1, 3):
         in_ch = dataset.get_level_vec_len(l)
-        hidden_size = int(in_ch * 8)
+        hidden_size = int(in_ch * 16)
         latent_dim = in_ch // config.vae.latent_ratio
         vae_model = VAE(config.vae.layer_num,
                         in_ch,
                         hidden_size,
                         latent_dim,
                         level_num=l)
-        vae_model.load_state_dict(vae_ckpt["model"][l])
+        vae_model.load_state_dict(vae_ckpt["model"][l - 1])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
@@ -81,6 +80,7 @@ def main(args):
             hidden_size = 1024
         if l == 2:
             hidden_size = hidden_size * 2
+            num_heads = num_heads * 2
         condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(l)]
 
         # Create model:
@@ -126,7 +126,7 @@ def main(args):
             z = torch.randn(batch_size,
                             length, 
                             ch).to(device)
-            a = [torch.zeros(batch_size).to(device) for _ in range(l)]
+            a = [torch.randint(0, diffusion.num_timesteps, (z.shape[0],), device=device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
@@ -145,13 +145,13 @@ def main(args):
 
             if l > 0:
                 # Rescale and decode
-                samples = samples * vae_std_list[l]
+                samples = samples * vae_std_list[l - 1]
                 samples = samples.reshape(batch_size * length, -1)
-                samples = vae_model_list[l].decode(samples)
+                samples = vae_model_list[l - 1].decode(samples)
                 samples = samples.reshape(batch_size, length, -1)
                 decoded.append(samples)
             else:
-                sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to()
+                sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
                 sample_[:, :, -7] = samples[:, :, 0]
                 sample_[:, :, -3:] = samples[:, :, -3:]
                 decoded.append(sample_.clone())
@@ -162,8 +162,8 @@ def main(args):
                 positions.append(load_utils.deduce_position_from_sample(scales[-1], scale, positions[-1], length))
                 scales.append(scale)
             else:
-                scales.append(dataset.rescale_voxel_len(samples[:, :, -7].clone()))
-                positions.append(dataset.rescale_positions(samples[:, :, -3:].clone()))
+                scales.append(dataset.rescale_voxel_len(sample_[:, :, -7].clone()))
+                positions.append(dataset.rescale_positions(sample_[:, :, -3:].clone()))
 
         # Denormalize and dump
         for j in range(batch_size):

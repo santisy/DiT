@@ -86,6 +86,11 @@ def create_logger(logging_dir):
         logger.addHandler(logging.NullHandler())
     return logger
 
+def noise_conditioning(x_list, a_list, diff):
+    x_out = []
+    for x, a in zip(x_list, a_list):
+        x_out.append(diff.q_sample(x, a))
+    return x_out
 
 #################################################################################
 #                                  Training Loop                                #
@@ -180,6 +185,7 @@ def main(args):
 
     if level_num == 2:
         hidden_size = hidden_size * 2
+        num_heads = num_heads * 2
     condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(level_num)]
 
     # Create DiT model
@@ -213,9 +219,9 @@ def main(args):
     #logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
     if not args.no_lr_decay:
-        scheduler = StepLR(opt, step_size=1, gamma=0.999)
+        scheduler = StepLR(opt, step_size=3, gamma=0.999)
 
 
     sampler = DistributedSampler(
@@ -273,7 +279,7 @@ def main(args):
                     x1 = vae_model_list[0].encode_and_reparam(x1.to(device)) / vae_std_list[0]
                 x = x1
                 xc = [x0,]
-                a = [torch.rand((x.shape[0],)).to(device),]
+                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),]
                 positions = [p0,]
             elif level_num == 2:
                 with torch.no_grad():
@@ -281,10 +287,12 @@ def main(args):
                     x2 = vae_model_list[1].encode_and_reparam(x2.to(device)) / vae_std_list[1]
                 x = x2
                 xc = [x0, x1]
-                a = [torch.rand((x.shape[0],)).to(device),
-                     torch.rand((x.shape[0],)).to(device)]
+                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),
+                     torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)]
                 positions = [p0, p1]
 
+            # Noise augmentation
+            xc = noise_conditioning(xc, a, diffusion)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             loss_dict = diffusion.training_losses(model, x, t,

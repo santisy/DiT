@@ -42,9 +42,6 @@ class PreviousNodeEmbedder(nn.Module):
         self.PEV = PEV # Positional embedding version
 
         for i, nd in enumerate(node_dim):
-            if i == 0:
-                # Do positional encoding at 0 stage (condition, absolute scales and more)
-                nd = 4 * 64
             self.mlp_list.append(
                 nn.Sequential(
                 nn.Linear(nd, hidden_size, bias=True),
@@ -56,8 +53,6 @@ class PreviousNodeEmbedder(nn.Module):
     def forward(self, nodes: List[torch.Tensor], PEs: List[torch.Tensor]):
         embedded_out = []
         for i, (n, pe, mlp) in enumerate(zip(nodes, PEs, self.mlp_list)):
-            if i == 0:
-                n = positional_encode(n, 32)
             if self.PEV != "v2":
                 out = mlp(n) + pe
             else:
@@ -469,8 +464,8 @@ class DiT(nn.Module):
         batch_size = x.size(0)
         PEs = []
         for i, (a_, p_) in enumerate(zip(a, positions)):
-            a_ = a_.reshape([batch_size, 1, 1])
-            x0[i] = torch.sqrt(1 - a_) * x0[i] + torch.sqrt(a_) * torch.randn_like(x0[i])
+            #a_ = a_.reshape([batch_size, 1, 1])
+            #x0[i] = torch.sqrt(1 - a_) * x0[i] + torch.sqrt(a_) * torch.randn_like(x0[i])
 
             if self.pos_embedding_version in ["v0", "v1"]:
                 pos = np.arange(x0[i].size(1), dtype=np.float32) / x0[i].size(1)
