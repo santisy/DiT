@@ -128,7 +128,7 @@ def main(args):
             z = torch.randn(batch_size,
                             length, 
                             ch).to(device)
-            a = [torch.randint(0, diffusion.num_timesteps, (z.shape[0],), device=device) for _ in range(l)]
+            a = [torch.zeros((z.shape[0],), device=device, dtype=torch.int64) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
