@@ -12,7 +12,7 @@ data:
     unit_length_list: [361, 139, 139]
 
 diffusion:
-    noise_schedule: "linear"
+    noise_schedule: "squaredcos_cap_v2"
     learn_sigma: false
     diffusion_steps: 1000
 

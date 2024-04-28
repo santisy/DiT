@@ -187,7 +187,8 @@ def main(args):
         hidden_size = hidden_size * 2
         num_heads = num_heads * 2
     condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(level_num)]
-    condition_node_dim[0] = 4
+    if level_num > 0:
+        condition_node_dim[0] = 4
 
     # Create DiT model
     model = DiT(
@@ -222,7 +223,7 @@ def main(args):
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
     if not args.no_lr_decay:
-        scheduler = StepLR(opt, step_size=3, gamma=0.999)
+        scheduler = StepLR(opt, step_size=5, gamma=0.999)
 
 
     sampler = DistributedSampler(
