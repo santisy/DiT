@@ -47,7 +47,7 @@ def main(args):
     vae_model_list = nn.ModuleList()
     online_variance_list = []
     vae_ckpt = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
-    for l in range(1, 3):
+    for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         latent_dim = in_ch // config.vae.latent_ratio
         hidden_size = int(in_ch * 16)
@@ -56,7 +56,7 @@ def main(args):
                         hidden_size,
                         latent_dim,
                         level_num=l)
-        vae_model.load_state_dict(vae_ckpt["model"][l - 1])
+        vae_model.load_state_dict(vae_ckpt["model"][l - 2])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
         online_variance_list.append(OnlineVariance(latent_dim))
@@ -72,13 +72,12 @@ def main(args):
         with torch.no_grad():
             if args.inspect_recon:
                 #x0_rec, _, _ = vae_model_list[0](x0)
-                x1_rec, _, _ = vae_model_list[0](x1)
-                x2_rec, _, _ = vae_model_list[1](x2)
+                #x1_rec, _, _ = vae_model_list[0](x1)
+                x2_rec, _, _ = vae_model_list[0](x2)
                 ##loss0 = (x0 - x0_rec).abs().mean()
-                loss1 = (x1 - x1_rec).abs() / x1.size(1)
+                #loss1 = (x1 - x1_rec).abs() / x1.size(1)
                 loss2 = (x2 - x2_rec).abs() / x2.size(1)
-                loss_train = loss1[0][:, :-14].sum() + loss2[0][:, :-14].sum() + \
-                             (loss1[0][:, -14:].sum() + loss2[0][:, -14:].sum()) * 20
+                loss_train = loss2[0][:, :-14].sum() + (loss2[0][:, -14:].sum()) * 20
                 print(loss_train)
                 import pdb; pdb.set_trace()
                 #print("Checking")
@@ -97,16 +96,13 @@ def main(args):
                 if i > 4:
                     break
             else:
-                latent_1 = vae_model_list[0].encode_and_reparam(x1)
-                latent_2 = vae_model_list[1].encode_and_reparam(x2)
-                online_variance_list[0].update(latent_1[0].detach().cpu())
-                online_variance_list[1].update(latent_2[0].detach().cpu())
+                latent_2 = vae_model_list[0].encode_and_reparam(x2)
+                online_variance_list[0].update(latent_2[0].detach().cpu())
 
     if not args.inspect_recon:
         # Dump the statistics
         np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),
-                std1=online_variance_list[0].std,
-                std2=online_variance_list[1].std)
+                std2=online_variance_list[0].std)
 
 
 if __name__ == "__main__":

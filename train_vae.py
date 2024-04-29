@@ -162,7 +162,7 @@ def main(args):
     model_list = nn.ModuleList()
     ema_list = nn.ModuleList()
 
-    for l in range(1, 3):
+    for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         latent_dim = in_ch // config.vae.latent_ratio
         hidden_size = int(in_ch * 16)
@@ -226,14 +226,14 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for _, x1, x2, _, _, _, _ in loader:
+        for _, _, x2, _, _, _, _ in loader:
 
             # To device
             #x0 = random_sample_and_reshape(x0.to(device), 64)
-            x1 = random_sample_and_reshape(x1.to(device), 256)
+            #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 512, zero_ratio=0.1)
-            x_list = [x1, x2]
+            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.1)
+            x_list = [x2,]
 
             loss = 0
 
@@ -284,15 +284,12 @@ def main(args):
                     # Calculate validation error
                     val_loss = 0
                     for i in range(len(val_dataset)):
-                        _, x1, x2, _, _, _, _ = val_dataset[i]
-                        x1 = x1.unsqueeze(dim=0).to(device)
+                        _, _, x2, _, _, _, _ = val_dataset[i]
                         x2 = x2.unsqueeze(dim=0).to(device)
                         with torch.no_grad():
-                            x1_rec, _, _ = ema_list[0](x1)
-                            val_loss += (x1_rec - x1).abs().mean()
-                            x2_rec, _, _ = ema_list[1](x2)
+                            x2_rec, _, _ = ema_list[0](x2)
                             val_loss += (x2_rec - x2).abs().mean()
-                    val_loss = val_loss / (len(val_dataset) * 3)
+                    val_loss = val_loss / len(val_dataset)
                     val_record.write(f"Step {train_steps}:\t{val_loss.cpu().item():.4f}\n")
                     val_record.flush()
                     if args.work_on_tmp_dir:

@@ -154,10 +154,9 @@ def main(args):
     vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
     vae_std_loaded = np.load(args.vae_std)
     vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     ]
-    for l in range(1, 3):
+    for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         hidden_size = int(in_ch * 16)
         latent_dim = in_ch // config.vae.latent_ratio
@@ -166,7 +165,7 @@ def main(args):
                         hidden_size,
                         latent_dim,
                         level_num=l)
-        vae_model.load_state_dict(vae_ckpt["model"][l - 1])
+        vae_model.load_state_dict(vae_ckpt["model"][l - 2])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
@@ -260,13 +259,11 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x0, x1, x2, p0, p1, p2, y in loader:
+        for x0, _, x2, p0, _, p2, y in loader:
 
             # To device, encode VAE and divide the per-element statistics
             x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
 
-            p0 = p0.to(device)
-            p1 = p1.to(device)
             p2 = p2.to(device)
             y = y.to(device)
 
@@ -276,22 +273,13 @@ def main(args):
                 a = []
                 xc = []
                 positions = []
-            elif level_num == 1:
-                with torch.no_grad():
-                    x1 = vae_model_list[0].encode_and_reparam(x1.to(device)) / vae_std_list[0]
-                x = x1
-                xc = [x0,]
-                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),]
-                positions = [p0,]
             elif level_num == 2:
                 with torch.no_grad():
-                    x1 = vae_model_list[0].encode_and_reparam(x1.to(device)) / vae_std_list[0]
-                    x2 = vae_model_list[1].encode_and_reparam(x2.to(device)) / vae_std_list[1]
+                    x2 = vae_model_list[0].encode_and_reparam(x2.to(device)) / vae_std_list[0]
                 x = x2
-                xc = [x0, x1]
-                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),
-                     torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)]
-                positions = [p0, p1]
+                xc = [x0, ]
+                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),]
+                positions = [None,]
 
             # Noise augmentation
             xc = noise_conditioning(xc, a, diffusion)
