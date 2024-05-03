@@ -18,5 +18,5 @@ diffusion:
 
 vae:
     layer_n: 8
-    in_ch: 256
+    in_ch: 128
     latent_ch: 2
