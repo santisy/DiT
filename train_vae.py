@@ -8,6 +8,7 @@
 A minimal training script for DiT using PyTorch DDP.
 """
 import torch
+import math
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -28,7 +29,7 @@ import os
 import shutil
 import json
 
-from vae_model import VAE, VAEVanilla, loss_function
+from vae_model import VAE, loss_function
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
@@ -100,7 +101,10 @@ def random_sample_and_reshape(x, l, zero_ratio=None):
             out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
             out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
 
-    return torch.cat(out, dim=0).unsqueeze(dim=0)
+    out = torch.cat(out, dim=0).unsqueeze(dim=0)
+    C = out.size(-1)
+    m = int(math.floor(math.pow(C, 1 / 3.0)))
+    return out[:, :, :m ** 3].clone()
     
 #################################################################################
 #                                  Training Loop                                #
@@ -164,20 +168,17 @@ def main(args):
 
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
+        in_ch = int(math.floor(math.pow(in_ch, 1 / 3.0)) ** 3.0)
         latent_dim = in_ch // config.vae.latent_ratio
-        hidden_size = int(in_ch * 16)
-        if not args.ablate_va:
-            model = VAE(config.vae.layer_num,
-                        in_ch,
-                        hidden_size,
-                        latent_dim,
-                        level_num=l)
-        else:
-            model = VAEVanilla(config.vae.layer_num,
-                               in_ch,
-                               hidden_size,
-                               latent_dim,
-                               level_num=l)
+        num_tokens = config.vae.num_tokens
+        nhead = config.vae.nhead
+        hidden_size = int(in_ch * 16) // (nhead * num_tokens) * (nhead * num_tokens)
+        model = VAE(config.vae.layer_num,
+                    in_ch,
+                    hidden_size,
+                    latent_dim,
+                    nhead=nhead,
+                    num_tokens=num_tokens)
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -239,7 +240,7 @@ def main(args):
 
             for _, (x, model) in enumerate(zip(x_list, model_list)):
                 x_rec, mean, logvar = model(x)
-                loss += loss_function(x_rec, x, mean, logvar, 14, 20)
+                loss += loss_function(x_rec, x, mean, logvar)
 
             opt.zero_grad()
             loss.backward()
@@ -325,7 +326,6 @@ if __name__ == "__main__":
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
-    parser.add_argument("--ablate_va", action="store_true")
     parser.add_argument("--work-on-tmp-dir", action="store_true")
 
     args = parser.parse_args()

@@ -19,3 +19,5 @@ diffusion:
 vae:
     latent_ratio: 4
     layer_num: 8
+    num_tokens: 8
+    nhead: 4
