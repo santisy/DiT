@@ -187,17 +187,13 @@ def main(args):
         in_ch = 4
         hidden_size = 1024
 
-    condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(level_num)]
-    if level_num > 0:
-        condition_node_dim[0] = 4
-
     # Create DiT model
     model = DiT(
         # Data related
         in_channels=in_ch, # Combine to each children
         num_classes=config.data.num_classes,
         condition_node_num=dataset.get_condition_num(level_num),
-        condition_node_dim=condition_node_dim,
+        condition_node_dim=dataset.get_condition_dim(level_num),
         # Network itself related
         hidden_size=hidden_size, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,

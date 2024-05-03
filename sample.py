@@ -8,6 +8,7 @@
 Sample new images from a pre-trained DiT.
 """
 import os
+import math
 import torch.nn as nn
 import torch
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -47,61 +48,65 @@ def main(args):
     vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
     vae_std_loaded = np.load(args.vae_std)
     vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     ]
 
-    for l in range(1, 3):
+    for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
-        hidden_size = int(in_ch * 16)
-        latent_dim = in_ch // config.vae.latent_ratio
-        vae_model = VAE(config.vae.layer_num,
-                        in_ch,
-                        hidden_size,
-                        latent_dim,
-                        level_num=l)
-        vae_model.load_state_dict(vae_ckpt["model"][l - 1])
+        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+        vae_model = VAE(config.vae.layer_n,
+                    config.vae.in_ch,
+                    config.vae.latent_ch,
+                    m
+        )
+        vae_model.load_state_dict(vae_ckpt["model"][l - 2])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
 
     # Model
     model_list = []
-    for l in [0, 2]:
+    in_ch_list = []
+    m = None
+    m_ = None
+    for l in range(3):
         num_heads = config.model.num_heads
         depth = config.model.depth
-        # Temp variables
-        if l != 0:
-            in_ch = dataset.get_level_vec_len(l)
-            in_ch = in_ch // config.vae.latent_ratio # This is for VAE
-            hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
-        else:
-            in_ch = 4
-            hidden_size = 1024
         if l == 2:
-            hidden_size = hidden_size * 2
-            num_heads = num_heads * 2
-        condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(l)]
+            in_ch = dataset.get_level_vec_len(2)
+            m_ = math.ceil(m // 2)
+            in_ch = int(m_ ** 3 * config.vae.latent_ch)
+            in_ch_list.append(in_ch)
+            hidden_size = 1024
+        elif l == 1: # Leaf 
+            # Length 14: orientation 8 + scales 3 + relative positions 3
+            in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
+            in_ch_list.append(in_ch)
+            hidden_size = 512
+        elif l == 0: # Root positions and scales
+            in_ch = 4
+            in_ch_list.append(in_ch)
+            hidden_size = 1024
 
-        # Create model:
+        # Create DiT model
         model = DiT(
             # Data related
             in_channels=in_ch, # Combine to each children
             num_classes=config.data.num_classes,
             condition_node_num=dataset.get_condition_num(l),
-            condition_node_dim=condition_node_dim,
+            condition_node_dim=dataset.get_condition_dim(l),
             # Network itself related
             hidden_size=hidden_size, # 4 times rule
             mlp_ratio=config.model.mlp_ratio,
             depth=depth,
-            num_heads=config.model.num_heads,
+            num_heads=num_heads,
             learn_sigma=config.diffusion.get("learn_sigma", True),
             # Other flags
             add_inject=config.model.add_inject,
-            aligned_gen=True if l == 2 else False,
+            aligned_gen=True if l != 0 else False,
             pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
-            level_num=l
-        ).to(device)
+            l=l
+        )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
@@ -120,9 +125,9 @@ def main(args):
         positions = []
         scales = []
         decoded = []
-        for l in [0, 2]:
-            length = int(dataset.octree_root_num * 8 ** l)
-            ch = dataset.get_level_vec_len(l) // config.vae.latent_ratio if l > 0 else 4
+        for l in range(3):
+            length = dataset.octree_root_num * 8 if l == 0 else dataset.octree_root_num * 8 ** 2
+            ch = in_ch_list[l]
             z = torch.randn(batch_size,
                             length, 
                             ch).to(device)
@@ -139,18 +144,18 @@ def main(args):
                                               device=device)
 
             # Append the generated latents for the following generation
-            if l == 0:
+            if l in [0, 1]:
                 samples = samples.clip_(0, 1)
             xc.append(samples.clone())
 
-            if l > 0:
+            if l == 2:
                 # Rescale and decode
-                samples = samples * vae_std_list[l - 2]
-                samples = samples.reshape(batch_size * length, -1)
-                samples = vae_model_list[l - 2].decode(samples)
+                samples = samples * vae_std_list[0]
+                samples = samples.reshape(batch_size * length, config.vae.latent_ch, m_, m_, m_)
+                samples = vae_model_list[0].decode(samples)
                 samples = samples.reshape(batch_size, length, -1)
-                decoded.append(samples)
-            else:
+                decoded.append(torch.cat([samples, xc[-1]], dim=-1).clone())
+            elif l == 0:
                 sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
                 sample_[:, :, -7] = samples[:, :, 0]
                 sample_[:, :, -3:] = samples[:, :, -3:]
