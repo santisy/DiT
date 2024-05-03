@@ -19,7 +19,7 @@ class PositionalEncoding(nn.Module):
         Args:
             x: Tensor, shape [batch_size, seq_len, embedding_dim]
         """
-        return x + self.encoding[:, :x.size(1)]
+        return x + self.encoding[:, :x.size(1)].to(x.device)
 
 class VAE(nn.Module):
     def __init__(self, layer_n, input_dim, hidden_dim, latent_dim, nhead, num_tokens):
