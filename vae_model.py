@@ -11,10 +11,15 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
         self.encoding[:, 0::2] = torch.sin(position * div_term)
         self.encoding[:, 1::2] = torch.cos(position * div_term)
-        self.encoding = self.encoding.unsqueeze(0).transpose(0, 1)
+        self.encoding = self.encoding.unsqueeze(0)  # This makes it [1, max_len, d_model]
 
     def forward(self, x):
-        return x + self.encoding[:x.size(0), :]
+        """
+        Adds positional encoding to the input batch considering batch first.
+        Args:
+            x: Tensor, shape [batch_size, seq_len, embedding_dim]
+        """
+        return x + self.encoding[:, :x.size(1)]
 
 class VAE(nn.Module):
     def __init__(self, layer_n, input_dim, hidden_dim, latent_dim, nhead, num_tokens):
@@ -62,6 +67,7 @@ class VAE(nn.Module):
 
     def forward(self, x):
         B, L, C = x.shape
+        x = x.reshape(B * L, C)
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
         out = self.decode(z)
