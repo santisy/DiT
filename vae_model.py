@@ -2,76 +2,88 @@ import math
 import torch
 from torch import nn
 from torch.nn import functional as F
+from taming_models import ResnetBlock, Downsample, Upsample
 
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=5000):
-        super(PositionalEncoding, self).__init__()
-        self.encoding = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
-        self.encoding[:, 0::2] = torch.sin(position * div_term)
-        self.encoding[:, 1::2] = torch.cos(position * div_term)
-        self.encoding = self.encoding.unsqueeze(0)  # This makes it [1, max_len, d_model]
-
+class reshapeTo3D(nn.Module):
+    def __init__(self, grid_size):
+        self._g = grid_size
+        super(reshapeTo3D, self).__init__()
+        
     def forward(self, x):
-        """
-        Adds positional encoding to the input batch considering batch first.
-        Args:
-            x: Tensor, shape [batch_size, seq_len, embedding_dim]
-        """
-        return x + self.encoding[:, :x.size(1)]
+        B, L, C = x.shape
+        x = x.reshape(B * L, C)
+        x = x.reshape(B * L, 1, self._g, self._g, self._g)
+        return x
 
 class VAE(nn.Module):
-    def __init__(self, layer_n, input_dim, hidden_dim, latent_dim, nhead, num_tokens):
+    def __init__(self,
+                 layer_n,
+                 in_ch,
+                 latent_ch,
+                 grid_size,
+                 *args,
+                 **kwargs
+                 ):
         super(VAE, self).__init__()
-        self.token_size = token_size = hidden_dim // num_tokens
-        self.num_tokens = num_tokens
+        # Encoder
+        self.input_fc = nn.Sequential(reshapeTo3D(grid_size),
+                                      nn.Conv3d(1, in_ch, 3, 1, 1))
+        fc1 = []
+        # First res
+        fc1.extend([ResnetBlock(in_ch) for _ in range(layer_n // 2)])
+        fc1.append(Downsample(in_ch, True))
+        fc1.append(ResnetBlock(in_ch, in_ch * 2))
+        fc1.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2 - 1)])
+        self.fc1 = nn.Sequential(*fc1)
+        self.fc2_mean = nn.Conv3d(in_ch * 2, latent_ch, 1, 1, 0)
+        self.fc2_logvar = nn.Conv3d(in_ch * 2, latent_ch, 1, 1, 0)
 
-        input_layers = [nn.Linear(input_dim, hidden_dim)]
-        input_layers.extend([x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n // 2)])
-        self.input_fc = nn.Sequential(*input_layers)
-        self.pos_encoder = PositionalEncoding(token_size)
+        # Decoder
+        self.fc3 = nn.Conv3d(latent_ch, in_ch * 2, 1, 1, 0)
+        fc4 = []
+        fc4.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2)])
+        fc4.append(Upsample(in_ch * 2, True))
+        fc4.append(ResnetBlock(in_ch * 2, in_ch))
+        fc4.extend([ResnetBlock(in_ch, in_ch) for _ in range(layer_n // 2 - 1)])
+        self.fc4 = nn.Sequential(*fc4)
 
-        encoder_layer = nn.TransformerEncoderLayer(token_size, nhead, batch_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, layer_n // 2)
-
-        self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
-        self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
-
-        self.fc3 = nn.Linear(latent_dim, hidden_dim)
-        decoder_layer = nn.TransformerDecoderLayer(token_size, nhead, batch_first=True)
-        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, layer_n // 2)
-        output_layers = [x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n // 2)]
-        output_layers.extend([nn.Linear(hidden_dim, input_dim), nn.Sigmoid()])
-        self.output_fc = nn.Sequential(*output_layers)
+        self.output_fc = nn.Sequential(nn.Conv3d(in_ch, 1, 3, 1, 1),
+                                       nn.Sigmoid())
 
     def encode(self, x):
         x = self.input_fc(x)
-        x = x.view(-1, self.num_tokens, self.token_size)  # Reshape to tokens
-        x = self.pos_encoder(x)
-        x = self.transformer_encoder(x)
-        x = x.view(x.size(0), -1)  # Flatten back before linear layers
-        return self.fc2_mean(x), self.fc2_logvar(x)
+        h = self.fc1(x)
+        return self.fc2_mean(h), self.fc2_logvar(h)
 
     def reparameterize(self, mean, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mean + eps * std
+        return mean + eps*std
 
     def decode(self, z):
-        z = self.fc3(z)
-        z = z.view(z.size(0), self.num_tokens, self.token_size)  # Reshape for decoding
-        z = self.transformer_decoder(z, z)
-        z = z.view(z.size(0), -1)  # Flatten for output
-        return self.output_fc(z)
+        h = self.fc3(z)
+        h = self.fc4(h)
+        return self.output_fc(h)
 
+    def encode_and_reparam(self, x):
+        B, L, C = x.shape
+        mean, logvar = self.encode(x)
+        out = self.reparameterize(mean, logvar)
+        out = out.reshape(B, L, -1)
+
+        return out
+        
     def forward(self, x):
         B, L, C = x.shape
-        x = x.reshape(B * L, C)
+
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
-        out = self.decode(z)
-        out = out.reshape([B, L, C])
+        out =  self.decode(z)
+
+        out = out.reshape(B, L, C)
+        mean = mean.reshape(B, L, -1)
+        logvar = logvar.reshape(B, L, -1)
+
         return out, mean, logvar
 
 # Loss function
@@ -111,9 +123,8 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    hidden_dim = 361 * 16 // (4 * 8) * 4 * 8
-    vae = VAE(4, 361, hidden_dim, 128, 4, 8)
-    input_data = torch.randn(1, 4, 361)
+    vae = VAE(4, 64, 2, 7)
+    input_data = torch.randn(1, 4, 343)
     output_data, mean, logvar = vae(input_data)
     loss = loss_function(input_data, output_data, mean, logvar)
     loss.sum().backward() 
@@ -121,3 +132,6 @@ if __name__ == "__main__":
     for name, param in vae.named_parameters():
         if param.grad is None:
             print(f"Parameter {name} did not receive gradients.")
+
+    encoded = vae.encode_and_reparam(input_data)
+    print(encoded.shape)

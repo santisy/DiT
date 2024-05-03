@@ -17,7 +17,6 @@ diffusion:
     diffusion_steps: 1000
 
 vae:
-    latent_ratio: 4
-    layer_num: 8
-    num_tokens: 8
-    nhead: 4
+    latent_n: 2
+    layer_n: 8
+    in_ch: 128
