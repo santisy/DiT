@@ -22,6 +22,7 @@ from copy import deepcopy
 from easydict import EasyDict as edict
 from ruamel.yaml import YAML
 from time import time
+import math
 import argparse
 import logging
 import os
@@ -158,13 +159,13 @@ def main(args):
                     ]
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
-        hidden_size = int(in_ch * 16)
-        latent_dim = in_ch // config.vae.latent_ratio
-        vae_model = VAE(config.vae.layer_num,
-                        in_ch,
-                        hidden_size,
-                        latent_dim,
-                        level_num=l)
+        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+        vae_model = VAE(config.vae.layer_n,
+                        config.vae.in_ch,
+                        config.vae.latent_ch,
+                        m)
+
+        # Load the trained model
         vae_model.load_state_dict(vae_ckpt["model"][l - 2])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
@@ -174,17 +175,18 @@ def main(args):
     # Arch variables
     num_heads = config.model.num_heads
     depth = config.model.depth
-    if level_num != 0:
-        in_ch = dataset.get_level_vec_len(level_num)
-        in_ch = in_ch // config.vae.latent_ratio # This is for VAE
-        hidden_size = int(np.ceil((in_ch * 16) / float(num_heads)) * num_heads)
-    else:
+    if level_num == 2:
+        in_ch = dataset.get_level_vec_len(2)
+        in_ch = int(math.ceil(m // 2) ** 3 * config.vae.latent_ch)
+        hidden_size = 1024
+    elif level_num == 1: # Leaf 
+        # Length 14: orientation 8 + scales 3 + relative positions 3
+        in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
+        hidden_size = 512
+    elif level_num == 0: # Root positions and scales
         in_ch = 4
         hidden_size = 1024
 
-    if level_num == 2:
-        hidden_size = hidden_size * 2
-        num_heads = num_heads * 2
     condition_node_dim = [dim // config.vae.latent_ratio for dim in dataset.get_condition_dim(level_num)]
     if level_num > 0:
         condition_node_dim[0] = 4
@@ -204,7 +206,7 @@ def main(args):
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
-        aligned_gen=True if level_num == 2 else False,
+        aligned_gen=True if level_num != 0 else False,
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num
     )
@@ -263,6 +265,8 @@ def main(args):
 
             # To device, encode VAE and divide the per-element statistics
             x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
+            x1 = x2[:, :, m ** 3:].clone()
+            x2 = x2[:, :, :m ** 3].clone()
 
             p2 = p2.to(device)
             y = y.to(device)
@@ -273,13 +277,21 @@ def main(args):
                 a = []
                 xc = []
                 positions = []
+            
+            if level_num == 1:
+                x = x1
+                xc = [x0,]
+                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),]
+                positions = [None,]
             elif level_num == 2:
                 with torch.no_grad():
                     x2 = vae_model_list[0].encode_and_reparam(x2.to(device)) / vae_std_list[0]
                 x = x2
-                xc = [x0, ]
-                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),]
-                positions = [None,]
+                xc = [x0, x1]
+                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),
+                     torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
+                    ]
+                positions = [None, None]
 
             # Noise augmentation
             xc = noise_conditioning(xc, a, diffusion)

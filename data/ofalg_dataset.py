@@ -58,9 +58,9 @@ class OFLAGDataset(Dataset):
         if level_num == 0:
             return []
         elif level_num == 1:
-            return None
+            return [self._octree_root_num]
         elif level_num == 2:
-            return [self._octree_root_num, ]
+            return [self._octree_root_num, self._octree_root_num * 8]
         else:
             raise ValueError(f"Invalid level number {level_num}.")
     
@@ -68,9 +68,9 @@ class OFLAGDataset(Dataset):
         if level_num == 0:
             return []
         elif level_num == 1:
-            return None
-        elif level_num == 2:
             return [4,]
+        elif level_num == 2:
+            return [4, 14]
         else:
             raise ValueError(f"Invalid level number {level_num}.")
 

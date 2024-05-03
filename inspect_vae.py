@@ -17,6 +17,7 @@ from easydict import EasyDict as edict
 import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
+import math
 
 from vae_model import VAE, OnlineVariance
 import argparse
@@ -49,13 +50,13 @@ def main(args):
     vae_ckpt = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
-        latent_dim = in_ch // config.vae.latent_ratio
-        hidden_size = int(in_ch * 16)
-        vae_model = VAE(config.vae.layer_num,
-                        in_ch,
-                        hidden_size,
-                        latent_dim,
-                        level_num=l)
+        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+        latent_dim = int(math.ceil(m // 2) ** 3 * config.vae.latent_ch)
+        vae_model = VAE(config.vae.layer_n,
+                    config.vae.in_ch,
+                    config.vae.latent_ch,
+                    m
+        )
         vae_model.load_state_dict(vae_ckpt["model"][l - 2])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
@@ -96,6 +97,7 @@ def main(args):
                 if i > 4:
                     break
             else:
+                x2 = x2[:, :, :m ** 3]
                 latent_2 = vae_model_list[0].encode_and_reparam(x2)
                 online_variance_list[0].update(latent_2[0].detach().cpu())
 
