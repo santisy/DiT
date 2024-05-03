@@ -17,6 +17,6 @@ diffusion:
     diffusion_steps: 1000
 
 vae:
-    latent_n: 2
     layer_n: 8
-    in_ch: 128
+    in_ch: 256
+    latent_ch: 2

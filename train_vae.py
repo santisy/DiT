@@ -86,7 +86,7 @@ def create_logger(logging_dir):
     return logger
 
 
-def random_sample_and_reshape(x, l, zero_ratio=None):
+def random_sample_and_reshape(x, l, m, zero_ratio=None):
     out = []
     for i in range(x.size(0)):
         if zero_ratio is None:
@@ -102,8 +102,6 @@ def random_sample_and_reshape(x, l, zero_ratio=None):
             out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
 
     out = torch.cat(out, dim=0).unsqueeze(dim=0)
-    C = out.size(-1)
-    m = int(math.floor(math.pow(C, 1 / 3.0)))
     return out[:, :, :m ** 3].clone()
     
 #################################################################################
@@ -168,17 +166,12 @@ def main(args):
 
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
-        in_ch = int(math.floor(math.pow(in_ch, 1 / 3.0)) ** 3.0)
-        latent_dim = in_ch // config.vae.latent_ratio
-        num_tokens = config.vae.num_tokens
-        nhead = config.vae.nhead
-        hidden_size = int(in_ch * 16) // (nhead * num_tokens) * (nhead * num_tokens)
-        model = VAE(config.vae.layer_num,
-                    in_ch,
-                    hidden_size,
-                    latent_dim,
-                    nhead=nhead,
-                    num_tokens=num_tokens)
+        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+        model = VAE(config.vae.layer_n,
+                    config.vae.in_ch,
+                    config.vae.latent_ch,
+                    m
+        )
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -233,7 +226,7 @@ def main(args):
             #x0 = random_sample_and_reshape(x0.to(device), 64)
             #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 1024, zero_ratio=0.1)
+            x2 = random_sample_and_reshape(x2.to(device), 512, m, zero_ratio=0.1)
             x_list = [x2,]
 
             loss = 0
@@ -287,6 +280,7 @@ def main(args):
                     for i in range(len(val_dataset)):
                         _, _, x2, _, _, _, _ = val_dataset[i]
                         x2 = x2.unsqueeze(dim=0).to(device)
+                        x2 = x2[:, :, :m ** 3]
                         with torch.no_grad():
                             x2_rec, _, _ = ema_list[0](x2)
                             val_loss += (x2_rec - x2).abs().mean()
