@@ -169,6 +169,7 @@ def main(args):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
         if not linear_flag:
+            print("\033[92mUse conv VAE.\033[00m")
             model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
@@ -176,6 +177,7 @@ def main(args):
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
+            print("\033[92mUse linear VAE.\033[00m")
             model = VAELinear(config.vae.layer_n,
                               in_ch,
                               in_ch * 16,
