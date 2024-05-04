@@ -82,7 +82,7 @@ def main(args):
         depth = config.model.depth
         if l == 2:
             in_ch = dataset.get_level_vec_len(2)
-            m_ = math.ceil(m // 2)
+            m_ = math.ceil(m / 2)
             in_ch = int(m_ ** 3 * config.vae.latent_ch)
             in_ch_list.append(in_ch)
             hidden_size = 1024

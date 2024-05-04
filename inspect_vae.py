@@ -53,7 +53,7 @@ def main(args):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
         if not linear_flag:
-            latent_dim = int(math.ceil(m // 2) ** 3 * config.vae.latent_ch)
+            latent_dim = int(math.ceil(m / 2) ** 3 * config.vae.latent_ch)
             vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
@@ -82,6 +82,7 @@ def main(args):
             if args.inspect_recon:
                 #x0_rec, _, _ = vae_model_list[0](x0)
                 #x1_rec, _, _ = vae_model_list[0](x1)
+                x2 = x2[:, :, :m ** 3]
                 x2_rec, _, _ = vae_model_list[0](x2)
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)

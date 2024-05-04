@@ -186,7 +186,7 @@ def main(args):
     depth = config.model.depth
     if level_num == 2:
         in_ch = dataset.get_level_vec_len(2)
-        in_ch = int(math.ceil(m // 2) ** 3 * config.vae.latent_ch)
+        in_ch = int(math.ceil(m / 2) ** 3 * config.vae.latent_ch)
         hidden_size = 1024
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
