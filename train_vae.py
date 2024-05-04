@@ -332,7 +332,6 @@ if __name__ == "__main__":
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
-    parser.add_argument("--linear_flag", action="store_true")
 
     args = parser.parse_args()
     main(args)

@@ -19,7 +19,7 @@ import numpy as np
 from tqdm import tqdm
 import math
 
-from vae_model import VAE, OnlineVariance
+from vae_model import VAE, VAELinear, OnlineVariance
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
@@ -48,15 +48,23 @@ def main(args):
     vae_model_list = nn.ModuleList()
     online_variance_list = []
     vae_ckpt = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
+    linear_flag = config.vae.linear
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        latent_dim = int(math.ceil(m // 2) ** 3 * config.vae.latent_ch)
-        vae_model = VAE(config.vae.layer_n,
-                    config.vae.in_ch,
-                    config.vae.latent_ch,
-                    m
-        )
+        if linear_flag:
+            latent_dim = int(math.ceil(m // 2) ** 3 * config.vae.latent_ch)
+            vae_model = VAE(config.vae.layer_n,
+                        config.vae.in_ch,
+                        config.vae.latent_ch,
+                        m)
+        else:
+            in_ch = int(m ** 3)
+            latent_dim = in_ch // config.vae.latent_ratio
+            vae_model = VAELinear(config.vae.layer_n,
+                              in_ch,
+                              in_ch * 16,
+                              latent_dim)
         vae_model.load_state_dict(vae_ckpt["model"][l - 2])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)

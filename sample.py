@@ -19,7 +19,7 @@ from easydict import EasyDict as edict
 from models import DiT
 import numpy as np
 
-from vae_model import VAE
+from vae_model import VAE, VAELinear
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
@@ -51,14 +51,22 @@ def main(args):
                     torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
                     ]
 
+    linear_flag = config.vae.linear
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        vae_model = VAE(config.vae.layer_n,
-                    config.vae.in_ch,
-                    config.vae.latent_ch,
-                    m
-        )
+        if linear_flag:
+            model = VAE(config.vae.layer_n,
+                        config.vae.in_ch,
+                        config.vae.latent_ch,
+                        m)
+        else:
+            in_ch = int(m ** 3)
+            latent_dim = in_ch // config.vae.latent_ratio
+            model = VAELinear(config.vae.layer_n,
+                              in_ch,
+                              in_ch * 16,
+                              latent_dim)
         vae_model.load_state_dict(vae_ckpt["model"][l - 2])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
