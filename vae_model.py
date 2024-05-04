@@ -15,6 +15,66 @@ class reshapeTo3D(nn.Module):
         x = x.reshape(B * L, 1, self._g, self._g, self._g)
         return x
 
+class VAELinear(nn.Module):
+    def __init__(self,
+                 layer_n,
+                 input_dim,
+                 hidden_dim,
+                 latent_dim,
+                 *args,
+                 **kwargs
+                 ):
+        super(VAELinear, self).__init__()
+        # Encoder
+        self.input_fc = nn.Linear(input_dim, hidden_dim)
+        self.fc1 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
+        self.fc2_mean = nn.Linear(hidden_dim, latent_dim)
+        self.fc2_logvar = nn.Linear(hidden_dim, latent_dim)
+        # Decoder
+        self.fc3 = nn.Linear(latent_dim, hidden_dim)
+        self.fc4 = nn.Sequential(*[x for x in [nn.GELU(), nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim)] for _ in range(layer_n)])
+        self.output_fc = nn.Sequential(nn.Linear(hidden_dim, input_dim),
+                                       nn.Sigmoid())
+
+    def encode(self, x):
+        x = self.input_fc(x)
+        h = self.fc1(x)
+        return self.fc2_mean(h), self.fc2_logvar(h)
+
+    def reparameterize(self, mean, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mean + eps*std
+
+    def decode(self, z):
+        h = self.fc3(z)
+        h = self.fc4(h)
+        return self.output_fc(h)
+
+    def encode_and_reparam(self, x):
+        B, L, C = x.shape
+        x = x.reshape(B * L, C)
+
+        mean, logvar = self.encode(x)
+        out = self.reparameterize(mean, logvar)
+        out = out.reshape(B, L, -1)
+
+        return out
+        
+    def forward(self, x):
+        B, L, C = x.shape
+        x = x.reshape(B * L, C)
+
+        mean, logvar = self.encode(x)
+        z = self.reparameterize(mean, logvar)
+        out =  self.decode(z)
+
+        out = out.reshape(B, L, C)
+        mean = mean.reshape(B, L, -1)
+        logvar = logvar.reshape(B, L, -1)
+
+        return out, mean, logvar
+
 class VAE(nn.Module):
     def __init__(self,
                  layer_n,

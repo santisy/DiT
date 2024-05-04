@@ -29,7 +29,7 @@ import os
 import shutil
 import json
 
-from vae_model import VAE, loss_function
+from vae_model import VAE, VAELinear, loss_function
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
@@ -163,15 +163,23 @@ def main(args):
     # Temp variables
     model_list = nn.ModuleList()
     ema_list = nn.ModuleList()
+    linear_flag = config.vae.linear
 
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        model = VAE(config.vae.layer_n,
-                    config.vae.in_ch,
-                    config.vae.latent_ch,
-                    m
-        )
+        if linear_flag:
+            model = VAE(config.vae.layer_n,
+                        config.vae.in_ch,
+                        config.vae.latent_ch,
+                        m)
+        else:
+            in_ch = int(m ** 3)
+            latent_dim = in_ch // config.vae.latent_ratio
+            model = VAELinear(config.vae.layer_n,
+                              in_ch,
+                              in_ch * 16,
+                              latent_dim)
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -226,7 +234,10 @@ def main(args):
             #x0 = random_sample_and_reshape(x0.to(device), 64)
             #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 256, m, zero_ratio=0.1)
+            if not linear_flag:
+                x2 = random_sample_and_reshape(x2.to(device), 256, m, zero_ratio=0.1)
+            else:
+                x2 = random_sample_and_reshape(x2.to(device), 1024, m, zero_ratio=0.1)
             x_list = [x2,]
 
             loss = 0
@@ -321,6 +332,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
+    parser.add_argument("--linear_flag", action="store_true")
 
     args = parser.parse_args()
     main(args)
