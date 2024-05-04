@@ -52,7 +52,7 @@ def main(args):
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        if linear_flag:
+        if not linear_flag:
             latent_dim = int(math.ceil(m // 2) ** 3 * config.vae.latent_ch)
             vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,

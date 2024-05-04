@@ -168,7 +168,7 @@ def main(args):
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        if linear_flag:
+        if not linear_flag:
             model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
