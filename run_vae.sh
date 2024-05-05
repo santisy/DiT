@@ -40,10 +40,10 @@ torchrun \
     --nproc_per_node=$NPROCS \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train_vae.py --exp-id vae_0504 \
+train_vae.py --exp-id vae_0504_01 \
     --epoch 2000 \
     --global-batch-size 64 \
-    --config-file configs/OFALG_config_v6.yaml \
+    --config-file configs/OFALG_config_v5.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane_l \
     --num-workers 24 \
     --ckpt-every 10000 \
