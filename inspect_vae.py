@@ -28,6 +28,7 @@ def main(args):
     # Prepare name and directory
     out_dir = args.export_out
     os.makedirs(out_dir, exist_ok=True)
+    exp_name = os.path.basename(os.path.dirname(args.ckpt))
     ckpt_name = os.path.basename(args.ckpt).split(".")[0]
     dataset_name = os.path.basename(args.data_root)
 
@@ -112,7 +113,7 @@ def main(args):
 
     if not args.inspect_recon:
         # Dump the statistics
-        np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),
+        np.savez(os.path.join(out_dir, f"{exp_name}-{ckpt_name}-{dataset_name}-stds"),
                 std2=online_variance_list[0].std)
 
 

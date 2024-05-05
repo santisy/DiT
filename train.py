@@ -291,9 +291,9 @@ def main(args):
             elif level_num == 2:
                 with torch.no_grad():
                     x2_list = []
-                    for x2_ in torch.split(x2, 4, dim=0):
+                    for x2_ in torch.split(x2, 8, dim=0):
                         x2_list.append(vae_model_list[0].encode_and_reparam(x2_) / vae_std_list[0])
-                    x2 = torch.cat(x2_list, dim=0)
+                    x2 = torch.cat(x2_list, dim=0).detach()
                 x = x2
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // 8, 8, C)
