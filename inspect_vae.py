@@ -87,7 +87,7 @@ def main(args):
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
                 loss2 = (x2 - x2_rec).abs() / x2.size(1)
-                loss_train = loss2[0][:, :-14].sum() + (loss2[0][:, -14:].sum()) * 20
+                loss_train = loss2.sum()
                 print(loss_train)
                 import pdb; pdb.set_trace()
                 #print("Checking")
