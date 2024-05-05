@@ -134,12 +134,24 @@ def main(args):
         scales = []
         decoded = []
         for l in range(3):
+            # Random generator
+            seed = i * 3 + l
+            if args.l0_seed is not None and l == 0:
+                seed = args.l0_seed
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+
+            # Shape parameter
             length = dataset.octree_root_num * 8 if l == 0 else dataset.octree_root_num * 8 ** 2
             ch = in_ch_list[l]
+
+            # Random input
             z = torch.randn(batch_size,
                             length, 
-                            ch).to(device)
-            a = [torch.randint(0, diffusion.num_timesteps, (z.shape[0],), device=device) for _ in range(l)]
+                            ch,
+                            generator=generator).to(device)
+            a = [torch.randint(0, diffusion.num_timesteps, (z.shape[0],),
+                               device=device, generator=generator) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
@@ -201,5 +213,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample-batch-size", type=int, default=4)
     parser.add_argument("--vae-ckpt", type=str, required=True)
     parser.add_argument("--vae-std", type=str, required=True)
+    parser.add_argument("--l0_seed", type=int, default=None,
+                        help="Given and fixed l0 random seed.")
     args = parser.parse_args()
     main(args)
