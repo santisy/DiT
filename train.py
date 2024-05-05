@@ -111,11 +111,6 @@ def main(args):
 
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
-    # Resume
-    if args.resume is not None:
-        resume_ckpt = torch.load(args.resume, map_location=lambda storage, loc: storage)
-    else:
-        resume_ckpt = None
 
     # Load config
     with open(args.config_file, "r") as f:
@@ -132,6 +127,13 @@ def main(args):
     torch.manual_seed(seed)
     torch.cuda.set_device(device)
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
+
+    map_fn = lambda storage, loc: storage.cuda() if torch.cuda.is_available() else storage
+    # Resume
+    if args.resume is not None:
+        resume_ckpt = torch.load(args.resume, map_location=map_fn)
+    else:
+        resume_ckpt = None
 
     # Setup an experiment folder:
     if rank == 0:
@@ -158,7 +160,7 @@ def main(args):
 
     # Prepare VAE model
     vae_model_list = nn.ModuleList()
-    vae_ckpt = torch.load(args.vae_ckpt, map_location=device)
+    vae_ckpt = torch.load(args.vae_ckpt, map_location=map_fn)
     vae_std_loaded = np.load(args.vae_std)
     vae_std_list = [
                     torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
