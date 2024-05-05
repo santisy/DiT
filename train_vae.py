@@ -237,7 +237,7 @@ def main(args):
             #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
             if not linear_flag:
-                x2 = random_sample_and_reshape(x2.to(device), 400, m, zero_ratio=0.1)
+                x2 = random_sample_and_reshape(x2.to(device), 384, m, zero_ratio=0.1)
             else:
                 x2 = random_sample_and_reshape(x2.to(device), 1024, m, zero_ratio=0.1)
             x_list = [x2,]
