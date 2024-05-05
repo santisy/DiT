@@ -111,6 +111,12 @@ def main(args):
 
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
+    # Resume
+    if args.resume is not None:
+        resume_ckpt = torch.load(args.resume, map_location=lambda storage, loc: storage)
+    else:
+        resume_ckpt = None
+
     # Load config
     with open(args.config_file, "r") as f:
         yaml = YAML()
@@ -152,7 +158,7 @@ def main(args):
 
     # Prepare VAE model
     vae_model_list = nn.ModuleList()
-    vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
+    vae_ckpt = torch.load(args.vae_ckpt, map_location=device)
     vae_std_loaded = np.load(args.vae_std)
     vae_std_list = [
                     torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
@@ -214,11 +220,14 @@ def main(args):
         aligned_gen=True if level_num != 0 else False,
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num
-    )
+    ).to(device)
     # Note that parameter initialization is done within the DiT constructor
-    ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
+    ema = deepcopy(model)  # Create an EMA of the model for use after training
+    if resume_ckpt is not None:
+        model.load_state_dict(resume_ckpt["model"])
+        ema.load_state_dict(resume_ckpt["ema"])
     requires_grad(ema, False)
-    model = DDP(model.to(device), device_ids=[rank])
+    model = DDP(model, device_ids=[rank])
     diffusion = create_diffusion(timestep_respacing="",
                                  **config.diffusion)
     logger.info(f"Diffusion model created.")
@@ -228,6 +237,8 @@ def main(args):
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
+    if resume_ckpt is not None:
+        opt.load_state_dict(resume_ckpt["opt"])
     if not args.no_lr_decay:
         scheduler = StepLR(opt, step_size=5, gamma=0.999)
 
@@ -383,6 +394,7 @@ if __name__ == "__main__":
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--level-num", type=int, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
+    parser.add_argument("--resume", type=str, default=None)
 
     # VAE related
     parser.add_argument("--vae-std", type=str, required=True)
