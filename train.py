@@ -156,7 +156,7 @@ def main(args):
         logger = create_logger(None)
 
     # Create dataset
-    dataset = OFLAGDataset(args.data_root, **config.data)
+    dataset = OFLAGDataset(args.data_root, diff_train=True, **config.data)
 
     # Prepare VAE model
     vae_model_list = nn.ModuleList()
@@ -304,7 +304,7 @@ def main(args):
             elif level_num == 2:
                 with torch.no_grad():
                     x2_list = []
-                    for x2_ in torch.split(x2, 8, dim=0):
+                    for x2_ in torch.split(x2, 24, dim=0):
                         x2_list.append(vae_model_list[0].encode_and_reparam(x2_) / vae_std_list[0])
                     x2 = torch.cat(x2_list, dim=0).detach()
                 x = x2
