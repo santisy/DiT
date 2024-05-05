@@ -15,6 +15,7 @@ torch.backends.cudnn.allow_tf32 = True
 from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 import torch.nn as nn
+from torch.utils.data import DataLoader
 import numpy as np
 from tqdm import tqdm
 import math
@@ -28,6 +29,7 @@ def main(args):
     # Prepare name and directory
     out_dir = args.export_out
     os.makedirs(out_dir, exist_ok=True)
+    exp_name = os.path.basename(os.path.dirname(args.ckpt))
     ckpt_name = os.path.basename(args.ckpt).split(".")[0]
     dataset_name = os.path.basename(args.data_root)
 
@@ -71,13 +73,13 @@ def main(args):
         online_variance_list.append(OnlineVariance(latent_dim))
     vae_model_list.eval()
 
+    loader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=2)
 
     # Go through the whole dataset
-    for i in tqdm(range(len(dataset))):
-        x0, x1, x2, _, _, _, _ = dataset[i]
-        x0 = x0.unsqueeze(dim=0).to(device)
-        x1 = x1.unsqueeze(dim=0).to(device)
-        x2 = x2.unsqueeze(dim=0).to(device)
+    for x0, x1, x2, _, _, _, _ in tqdm(loader):
+        x0 = x0.to(device)
+        x1 = x1.to(device)
+        x2 = x2.to(device)
         with torch.no_grad():
             if args.inspect_recon:
                 #x0_rec, _, _ = vae_model_list[0](x0)
@@ -86,7 +88,7 @@ def main(args):
                 x2_rec, _, _ = vae_model_list[0](x2)
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
-                loss2 = (x2 - x2_rec).abs() / x2.size(1)
+                loss2 = (x2 - x2_rec).abs() / (x2.size(1) * x2.size(0))
                 loss_train = loss2.sum()
                 print(loss_train)
                 import pdb; pdb.set_trace()
@@ -103,16 +105,17 @@ def main(args):
                 #x2 = dataset.denormalize(x2[0], 2).detach().cpu()
                 #load_utils.dump_to_bin(os.path.join("vae_recon_dir", f"out_{i:04d}.bin"),
                 #                       x0, x1, x2, dataset.octree_root_num)
-                if i > 4:
-                    break
             else:
                 x2 = x2[:, :, :m ** 3]
-                latent_2 = vae_model_list[0].encode_and_reparam(x2)
-                online_variance_list[0].update(latent_2[0].detach().cpu())
+                with torch.no_grad():
+                    latent_2 = vae_model_list[0].encode_and_reparam(x2)
+                B, L, _ = latent_2.shape
+                latent_2 = latent_2.reshape(B * L, -1)
+                online_variance_list[0].update(latent_2.detach().cpu())
 
     if not args.inspect_recon:
         # Dump the statistics
-        np.savez(os.path.join(out_dir, f"{ckpt_name}-{dataset_name}-stds"),
+        np.savez(os.path.join(out_dir, f"{exp_name}-{ckpt_name}-{dataset_name}-stds"),
                 std2=online_variance_list[0].std)
 
 
