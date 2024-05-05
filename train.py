@@ -162,14 +162,14 @@ def main(args):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
         if not linear_flag:
-            model = VAE(config.vae.layer_n,
+            vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
                         m)
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
-            model = VAELinear(config.vae.layer_n,
+            vae_model = VAELinear(config.vae.layer_n,
                               in_ch,
                               in_ch * 16,
                               latent_dim)
@@ -270,8 +270,8 @@ def main(args):
 
             # To device, encode VAE and divide the per-element statistics
             x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
-            x1 = x2[:, :, m ** 3:].clone()
-            x2 = x2[:, :, :m ** 3].clone()
+            x1 = x2[:, :, m ** 3:].clone().to(device)
+            x2 = x2[:, :, :m ** 3].clone().to(device)
 
             p2 = p2.to(device)
             y = y.to(device)

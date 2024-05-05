@@ -47,7 +47,7 @@ train.py --exp-id l1_0504 \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane_l \
     --num-workers 24 \
     --ckpt-every 8000 \
-    --vae-std datasets/vae_stds/vae_0100000-shapenet_airplane-stds.npz \
-    --vae-ckpt training_runs/vae_0503/vae_0030000.pt \
+    --vae-std datasets/vae_stds/vae_0040000-shapenet_airplane_l-stds.npz \
+    --vae-ckpt training_runs/vae_0503/vae_0040000.pt \
     --work-on-tmp-dir \
     --level-num 1

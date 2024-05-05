@@ -48,6 +48,6 @@ train.py --exp-id l2_0504 \
     --num-workers 24 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
-    --vae-std datasets/vae_stds/vae_0100000-shapenet_airplane-stds.npz \
-    --vae-ckpt training_runs/vae_0503/vae_0030000.pt \
+    --vae-std datasets/vae_stds/vae_0040000-shapenet_airplane_l-stds.npz \
+    --vae-ckpt training_runs/vae_0503/vae_0040000.pt \
     --level-num 2
