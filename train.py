@@ -292,6 +292,9 @@ def main(args):
                 with torch.no_grad():
                     x2 = vae_model_list[0].encode_and_reparam(x2.to(device)) / vae_std_list[0]
                 x = x2
+                B, L, C = x1.shape
+                x1 = x1.reshape(B, L // 8, 8, C)
+                x1 = x1.reshape(B, L // 8, 8 * C).contiguous()
                 xc = [x0, x1]
                 a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),
                      torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)

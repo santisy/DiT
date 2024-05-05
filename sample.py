@@ -154,6 +154,10 @@ def main(args):
             # Append the generated latents for the following generation
             if l in [0, 1]:
                 samples = samples.clip_(0, 1)
+            if l == 1:
+                B, L, C = samples.shape
+                samples = samples.reshape(B, L // 8, 8, C)
+                samples = samples.reshape(B, L // 8, 8 * C).contiguous()
             xc.append(samples.clone())
 
             if l == 2:
@@ -162,7 +166,9 @@ def main(args):
                 samples = samples.reshape(batch_size * length, config.vae.latent_ch, m_, m_, m_)
                 samples = vae_model_list[0].decode(samples)
                 samples = samples.reshape(batch_size, length, -1)
-                decoded.append(torch.cat([samples, xc[-1]], dim=-1).clone())
+                B, L, C = xc[-1]
+                x2_non_V = xc[-1].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
+                decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
             elif l == 0:
                 sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
                 sample_[:, :, -7] = samples[:, :, 0]
