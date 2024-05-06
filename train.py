@@ -156,7 +156,7 @@ def main(args):
         logger = create_logger(None)
 
     # Create dataset
-    dataset = OFLAGDataset(args.data_root, diff_train=True, **config.data)
+    dataset = OFLAGDataset(args.data_root, **config.data)
 
     # Prepare VAE model
     vae_model_list = nn.ModuleList()

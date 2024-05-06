@@ -14,7 +14,6 @@ class OFLAGDataset(Dataset):
                  only_infer=False,
                  validate_num=0,
                  validate_flag=False,
-                 diff_train=False,
                  **kwargs):
         super().__init__()
 
@@ -29,9 +28,6 @@ class OFLAGDataset(Dataset):
             self._stats = json.load(f)
 
         file_paths = glob.glob(os.path.join(data_root, "*.bin"))
-        if diff_train:
-            file_paths = sorted(file_paths)
-            file_paths = file_paths[:-int(len(file_paths) * 0.05)]
         if not only_infer:
             file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
 
