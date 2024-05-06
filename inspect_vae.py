@@ -73,7 +73,8 @@ def main(args):
         online_variance_list.append(OnlineVariance(latent_dim))
     vae_model_list.eval()
 
-    loader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=2)
+    loader = DataLoader(dataset, batch_size=args.batch_size,
+                        shuffle=False, num_workers=2)
 
     # Go through the whole dataset
     for x0, x1, x2, _, _, _, _ in tqdm(loader):
@@ -127,5 +128,6 @@ if __name__ == "__main__":
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--export-out", type=str, required=True)
     parser.add_argument("--inspect-recon", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=4)
     args = parser.parse_args()
     main(args)

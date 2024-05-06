@@ -14,7 +14,7 @@ class OFLAGDataset(Dataset):
                  only_infer=False,
                  validate_num=0,
                  validate_flag=False,
-                 ** kwargs):
+                 **kwargs):
         super().__init__()
 
         self._octree_root_num = octree_root_num
