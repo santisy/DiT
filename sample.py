@@ -52,18 +52,19 @@ def main(args):
                     ]
 
     linear_flag = config.vae.linear
+    m = None
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
         if not linear_flag:
-            model = VAE(config.vae.layer_n,
+            vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
                         m)
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
-            model = VAELinear(config.vae.layer_n,
+            vae_model = VAELinear(config.vae.layer_n,
                               in_ch,
                               in_ch * 16,
                               latent_dim)
@@ -75,7 +76,6 @@ def main(args):
     # Model
     model_list = []
     in_ch_list = []
-    m = None
     m_ = None
     for l in range(3):
         num_heads = config.model.num_heads
@@ -113,13 +113,14 @@ def main(args):
             add_inject=config.model.add_inject,
             aligned_gen=True if l != 0 else False,
             pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
-            l=l
+            level_num=l
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
         model.load_state_dict(model_ckpt["model"])
+        model.to(device)
         model.eval()  # important!
         model_list.append(model)
 
@@ -138,7 +139,7 @@ def main(args):
             seed = i * 3 + l
             if args.l0_seed is not None and l == 0:
                 seed = args.l0_seed
-            generator = torch.Generator()
+            generator = torch.Generator(device=device)
             generator.manual_seed(seed)
 
             # Shape parameter
@@ -149,9 +150,9 @@ def main(args):
             z = torch.randn(batch_size,
                             length, 
                             ch,
-                            generator=generator).to(device)
-            a = [torch.randint(0, diffusion.num_timesteps, (z.shape[0],),
-                               device=device, generator=generator) for _ in range(l)]
+                            generator=generator,
+                            device=device)
+            a = [torch.zeros((z.shape[0],), dtype=torch.int64, device=device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
@@ -178,8 +179,8 @@ def main(args):
                 samples = samples.reshape(batch_size * length, config.vae.latent_ch, m_, m_, m_)
                 samples = vae_model_list[0].decode(samples)
                 samples = samples.reshape(batch_size, length, -1)
-                B, L, C = xc[-1]
-                x2_non_V = xc[-1].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
+                B, L, C = xc[-2].shape
+                x2_non_V = xc[-2].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
                 decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
             elif l == 0:
                 sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
@@ -196,7 +197,8 @@ def main(args):
             x0 = dataset.denormalize(decoded[0][j], 0).detach().cpu()
             x1 = dataset.denormalize(torch.zeros((dataset.octree_root_num * 8,
                                                   dataset.get_level_vec_len(1)),
-                                                  dtype=torch.float32, device=device)).detach().cpu()
+                                                  dtype=torch.float32, device=device),
+                                    1).detach().cpu()
             x2 = dataset.denormalize(decoded[1][j], 2).detach().cpu()
             load_utils.dump_to_bin(os.path.join(out_dir, f"out_{j + i * batch_size:04d}.bin"),
                                    x0, x1, x2, dataset.octree_root_num)
