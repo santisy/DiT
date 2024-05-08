@@ -5,6 +5,7 @@ model:
     num_heads: 16
     add_inject: true
     pos_emedding_version: "v2"
+    hidden_sizes: [1024, 512, 1024]
 
 data:
     num_classes: -1
