@@ -80,21 +80,19 @@ def main(args):
     for l in range(3):
         num_heads = config.model.num_heads
         depth = config.model.depth
+        hidden_size = config.model.hidden_sizes[l]
         if l == 2:
             in_ch = dataset.get_level_vec_len(2)
             m_ = math.ceil(m / 2)
             in_ch = int(m_ ** 3 * config.vae.latent_ch)
             in_ch_list.append(in_ch)
-            hidden_size = 1024
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
             in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
             in_ch_list.append(in_ch)
-            hidden_size = 512
         elif l == 0: # Root positions and scales
             in_ch = 4
             in_ch_list.append(in_ch)
-            hidden_size = 1024
 
         # Create DiT model
         model = DiT(

@@ -192,17 +192,15 @@ def main(args):
     # Arch variables
     num_heads = config.model.num_heads
     depth = config.model.depth
+    hidden_size = config.model.hidden_sizes[level_num]
     if level_num == 2:
         in_ch = dataset.get_level_vec_len(2)
         in_ch = int(math.ceil(m / 2) ** 3 * config.vae.latent_ch)
-        hidden_size = 1024
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
         in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
-        hidden_size = 512
     elif level_num == 0: # Root positions and scales
         in_ch = 4
-        hidden_size = 1024
 
     # Create DiT model
     model = DiT(
