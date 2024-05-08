@@ -44,7 +44,7 @@ train.py --exp-id l2_0504 \
     --epoch 4000 \
     --global-batch-size 48 \
     --config-file configs/OFALG_config_v5_nl.yaml \
-    --data-root ${SLURM_TMPDIR}/shapenet_airplane \
+    --data-root ${SLURM_TMPDIR}/shapenet_airplane_l \
     --num-workers 24 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
