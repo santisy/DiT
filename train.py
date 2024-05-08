@@ -132,6 +132,7 @@ def main(args):
     # Resume
     if args.resume is not None:
         resume_ckpt = torch.load(args.resume, map_location=map_fn)
+        print(f"\033[92mResume from checkpoint {resume_ckpt}.\033[00m")
     else:
         resume_ckpt = None
 
