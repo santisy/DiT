@@ -191,7 +191,7 @@ def main(args):
     # Arch variables
     num_heads = config.model.num_heads
     depth = config.model.depth
-    hidden_size = config.model.hidden_sizes[level_num]
+    hidden_size = config.model.hidden_sizes[2]
     in_ch = int(math.ceil(m / 2) ** 3) + 14 + 4
 
     # Create DiT model
@@ -209,7 +209,7 @@ def main(args):
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
-        aligned_gen=True if level_num != 0 else False,
+        aligned_gen=True,
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num
     ).to(device)

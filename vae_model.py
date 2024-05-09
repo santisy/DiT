@@ -162,6 +162,7 @@ class VAE(nn.Module):
             quant = self.quantize.get_codes_from_indices(c)
         quant = quant.reshape(B * L, self.g, self.g, self.g, -1).permute(0, 4, 1, 2, 3).contiguous()
         out = self.decode(quant)
+        out = out.reshape(B, L, -1)
         return out
 
     def get_normalized_indices(self, x):

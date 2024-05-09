@@ -46,10 +46,6 @@ def main(args):
     # VAE model and stats loading
     vae_model_list = nn.ModuleList()
     vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
-    vae_std_loaded = np.load(args.vae_std)
-    vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
-                    ]
 
     linear_flag = config.vae.linear
     m = None
@@ -58,9 +54,10 @@ def main(args):
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
         if not linear_flag:
             vae_model = VAE(config.vae.layer_n,
-                        config.vae.in_ch,
-                        config.vae.latent_ch,
-                        m)
+                            config.vae.in_ch,
+                            config.vae.latent_ch,
+                            m,
+                            quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
@@ -73,54 +70,39 @@ def main(args):
         vae_model_list.append(vae_model)
     vae_model_list.eval()
 
-    # Model
-    model_list = []
-    in_ch_list = []
-    m_ = None
-    for l in range(3):
-        num_heads = config.model.num_heads
-        depth = config.model.depth
-        hidden_size = config.model.hidden_sizes[l]
-        if l == 2:
-            in_ch = dataset.get_level_vec_len(2)
-            m_ = math.ceil(m / 2)
-            in_ch = int(m_ ** 3 * config.vae.latent_ch)
-            in_ch_list.append(in_ch)
-        elif l == 1: # Leaf 
-            # Length 14: orientation 8 + scales 3 + relative positions 3
-            in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
-            in_ch_list.append(in_ch)
-        elif l == 0: # Root positions and scales
-            in_ch = 4
-            in_ch_list.append(in_ch)
+    # Arch variables
+    num_heads = config.model.num_heads
+    depth = config.model.depth
+    hidden_size = config.model.hidden_sizes[2]
+    in_ch = int(math.ceil(m / 2) ** 3) + 14 + 4
 
-        # Create DiT model
-        model = DiT(
-            # Data related
-            in_channels=in_ch, # Combine to each children
-            num_classes=config.data.num_classes,
-            condition_node_num=dataset.get_condition_num(l),
-            condition_node_dim=dataset.get_condition_dim(l),
-            # Network itself related
-            hidden_size=hidden_size, # 4 times rule
-            mlp_ratio=config.model.mlp_ratio,
-            depth=depth,
-            num_heads=num_heads,
-            learn_sigma=config.diffusion.get("learn_sigma", True),
-            # Other flags
-            add_inject=config.model.add_inject,
-            aligned_gen=True if l != 0 else False,
-            pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
-            level_num=l
-        )
-        # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
-        ckpt_path = args.ckpt[l]
-        print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
-        model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-        model.load_state_dict(model_ckpt["model"])
-        model.to(device)
-        model.eval()  # important!
-        model_list.append(model)
+    # Create DiT model
+    model = DiT(
+        # Data related
+        in_channels=in_ch, # Combine to each children
+        num_classes=config.data.num_classes,
+        condition_node_num=[],
+        condition_node_dim=[],
+        # Network itself related
+        hidden_size=hidden_size, # 4 times rule
+        mlp_ratio=config.model.mlp_ratio,
+        depth=depth,
+        num_heads=num_heads,
+        learn_sigma=config.diffusion.get("learn_sigma", True),
+        # Other flags
+        add_inject=config.model.add_inject,
+        aligned_gen=True,
+        pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
+        level_num=2
+    ).to(device)
+
+    # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
+    ckpt_path = args.ckpt[0]
+    print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
+    model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
+    model.load_state_dict(model_ckpt["model"])
+    model.to(device)
+    model.eval()  # important!
 
     diffusion = create_diffusion(timestep_respacing="",
                                  **config.diffusion)
@@ -132,63 +114,49 @@ def main(args):
         positions = []
         scales = []
         decoded = []
-        for l in range(3):
-            # Random generator
-            seed = i * 3 + l
-            if args.l0_seed is not None and l == 0:
-                seed = args.l0_seed
-            generator = torch.Generator(device=device)
-            generator.manual_seed(seed)
+        a = []
 
-            # Shape parameter
-            length = dataset.octree_root_num * 8 if l == 0 else dataset.octree_root_num * 8 ** 2
-            ch = in_ch_list[l]
+        # Random generator
+        seed = i
+        generator = torch.Generator(device=device)
+        generator.manual_seed(seed)
 
-            # Random input
-            z = torch.randn(batch_size,
-                            length, 
-                            ch,
-                            generator=generator,
-                            device=device)
-            a = [torch.zeros((z.shape[0],), dtype=torch.int64, device=device) for _ in range(l)]
-            model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
+        # Shape parameter
+        length = dataset.octree_root_num * 8 ** 2
+        ch = in_ch
 
-            # Sample
-            samples = diffusion.p_sample_loop(model_list[l].forward,
-                                              z.shape,
-                                              z,
-                                              model_kwargs=model_kwargs,
-                                              clip_denoised=False,
-                                              progress=False,
-                                              device=device)
+        # Random input
+        z = torch.randn(batch_size,
+                        length, 
+                        ch,
+                        generator=generator,
+                        device=device)
+        model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
-            # Append the generated latents for the following generation
-            if l in [0, 1]:
-                samples = samples.clip_(0, 1)
-            if l == 1:
-                B, L, C = samples.shape
-                samples = samples.reshape(B, L // 8, 8, C)
-                samples = samples.reshape(B, L // 8, 8 * C).contiguous()
-            xc.append(samples.clone())
+        # Sample
+        samples = diffusion.p_sample_loop(model.forward,
+                                          z.shape,
+                                          z,
+                                          model_kwargs=model_kwargs,
+                                          clip_denoised=False,
+                                          progress=False,
+                                          device=device)
 
-            if l == 2:
-                # Rescale and decode
-                samples = samples * vae_std_list[0]
-                samples = samples.reshape(batch_size * length, config.vae.latent_ch, m_, m_, m_)
-                samples = vae_model_list[0].decode(samples)
-                samples = samples.reshape(batch_size, length, -1)
-                B, L, C = xc[-2].shape
-                x2_non_V = xc[-2].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
-                decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
-            elif l == 0:
-                sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
-                sample_[:, :, -7] = samples[:, :, 0]
-                sample_[:, :, -3:] = samples[:, :, -3:]
-                decoded.append(sample_.clone())
+        # Append the generated latents for the following generation
+        samples = samples.clip_(0, 1)
 
-            # Get the positions and scales from generated
-            scales.append(None)
-            positions.append(None)
+
+        ## Unpack and decode
+        # level 0
+        sample_ = torch.zeros(batch_size, length // 64, dataset.get_level_vec_len(0)).to(device)
+        sample_[:, :, -7] = samples[:, :, -4].reshape(batch_size, length // 64, 64).mean(dim=-1)
+        sample_[:, :, -3:] = samples[:, :, -3:].reshape(batch_size, length // 64, 64, 3).mean(dim=-2)
+        decoded.append(sample_.clone())
+        # level 2
+        indices = samples[:, :, :3 ** 3]
+        grid_values = vae_model_list[0].decode_code(indices)
+        x2 = torch.cat([grid_values, samples[:, :, 3 ** 3:3 ** 3 + 14]], dim=-1)
+        decoded.append(x2)
 
         # Denormalize and dump
         for j in range(batch_size):
@@ -212,8 +180,5 @@ if __name__ == "__main__":
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
     parser.add_argument("--vae-ckpt", type=str, required=True)
-    parser.add_argument("--vae-std", type=str, required=True)
-    parser.add_argument("--l0_seed", type=int, default=None,
-                        help="Given and fixed l0 random seed.")
     args = parser.parse_args()
     main(args)
