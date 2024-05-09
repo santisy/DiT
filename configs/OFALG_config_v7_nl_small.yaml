@@ -20,6 +20,6 @@ diffusion:
 vae:
     layer_n: 6
     in_ch: 64
-    latent_ch: 16
+    latent_ch: 128
     latent_ratio: 4
     linear: false

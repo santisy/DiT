@@ -23,7 +23,7 @@ class VectorQuantizer2(nn.Module):
         self.legacy = legacy
 
         self.embedding = nn.Embedding(self.n_e, self.e_dim)
-        self.embedding.weight.data.normal_()
+        self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)
 
         self.remap = remap
         if self.remap is not None:
@@ -71,35 +71,31 @@ class VectorQuantizer2(nn.Module):
         # reshape z -> (batch, height, width, channel) and flatten
         z = rearrange(z, 'b c h w d -> b h w d c').contiguous()
         z_flattened = z.view(-1, self.e_dim)
-        z_flattened_norm = F.normalize(z_flattened, dim=-1)
-        embedding_norm = F.normalize(self.embedding.weight, dim=-1)
         # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
 
-        d = torch.sum(z_flattened_norm ** 2, dim=1, keepdim=True) + \
-            torch.sum(embedding_norm ** 2, dim=1) - 2 * \
-            torch.einsum('bd,dn->bn', z_flattened_norm, rearrange(embedding_norm, 'n d -> d n'))
+        d = torch.sum(z_flattened ** 2, dim=1, keepdim=True) + \
+            torch.sum(self.embedding.weight ** 2, dim=1) - 2 * \
+            torch.einsum('bd,dn->bn', z_flattened, rearrange(self.embedding.weight, 'n d -> d n'))
 
         min_encoding_indices = torch.argmin(d, dim=1)
         z_q = self.embedding(min_encoding_indices).view(z.shape)
-        z_q_norm = F.normalize(z_q, dim=-1)
-        z_norm = F.normalize(z, dim=-1)
 
         perplexity = None
         min_encodings = None
 
         # compute loss for embedding
         if not self.legacy:
-            loss = self.beta * torch.mean((z_q_norm.detach()-z_norm)**2) + \
-                   torch.mean((z_q_norm - z_norm.detach()) ** 2)
+            loss = self.beta * torch.mean((z_q.detach()-z)**2) + \
+                   torch.mean((z_q - z.detach()) ** 2)
         else:
-            loss = torch.mean((z_q_norm.detach()-z_norm)**2) + self.beta * \
-                   torch.mean((z_q_norm - z_norm.detach()) ** 2)
+            loss = torch.mean((z_q.detach()-z)**2) + self.beta * \
+                   torch.mean((z_q.detach()) ** 2)
 
         # preserve gradients
-        z_q_norm = z + (z_q_norm - z).detach()
+        z_q = z + (z_q - z).detach()
 
         # reshape back to match original input shape
-        z_q_norm = rearrange(z_q_norm, 'b h w d c -> b c h w d').contiguous()
+        z_q = rearrange(z_q, 'b h w d c -> b c h w d').contiguous()
 
         if self.remap is not None:
             min_encoding_indices = min_encoding_indices.reshape(z.shape[0],-1) # add batch axis
@@ -110,7 +106,7 @@ class VectorQuantizer2(nn.Module):
             min_encoding_indices = min_encoding_indices.reshape(
                 z_q.shape[0], z_q.shape[2], z_q.shape[3])
 
-        return z_q_norm, loss, (perplexity, min_encodings, min_encoding_indices)
+        return z_q, loss, (perplexity, min_encodings, min_encoding_indices)
 
     def get_codebook_entry(self, indices, shape):
         # shape specifying (batch, height, width, channel)
@@ -121,7 +117,6 @@ class VectorQuantizer2(nn.Module):
 
         # get quantized latent vectors
         z_q = self.embedding(indices)
-        z_q = F.normalize(z_q, dim=-1)
 
         if shape is not None:
             z_q = z_q.view(shape)

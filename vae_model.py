@@ -86,7 +86,7 @@ class VAE(nn.Module):
                  ):
         super(VAE, self).__init__()
         embed_dim = latent_ch
-        self.code_n = 2048
+        self.code_n = 1024
         self.g = grid_size
 
         # Encoder
