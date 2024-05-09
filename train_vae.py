@@ -101,8 +101,8 @@ def random_sample_and_reshape(x, l, m, zero_ratio=None):
             out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
             out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
 
-    out = torch.cat(out, dim=0).unsqueeze(dim=0)
-    return out[:, :, :m ** 3].clone()
+    out = torch.cat(out, dim=0).unsqueeze(dim=0).clone()
+    return out
     
 #################################################################################
 #                                  Training Loop                                #
@@ -232,15 +232,14 @@ def main(args):
         logger.info(f"Beginning epoch {epoch}...")
         for x0, _, x2, _, _, _, _ in loader:
 
-            # To device
-            #x0 = random_sample_and_reshape(x0.to(device), 64)
-            #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
             x0 = x0.to(device)
+            x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1)
+            x0 = torch.repeat_interleave(x0, 64, dim=1)
             x2 = x2.to(device)
-            x2 = torch.cat([x2, x0[:, :, -7].unsqeeze(dim=-1), x0[:, :, -3:]], dim=-1).clone()
+            x2 = torch.cat([x2, x0], dim=-1).clone()
             if not linear_flag:
-                x2 = random_sample_and_reshape(x2, 512, m, zero_ratio=0.1)
+                x2 = random_sample_and_reshape(x2, 384, m, zero_ratio=0.1)
             else:
                 x2 = random_sample_and_reshape(x2, 1024, m, zero_ratio=0.1)
             x_list = [x2,]
@@ -294,9 +293,12 @@ def main(args):
                     # Calculate validation error
                     val_loss = 0
                     for i in range(len(val_dataset)):
-                        _, _, x2, _, _, _, _ = val_dataset[i]
-                        x2 = x2.unsqueeze(dim=0).to(device)
-                        x2 = x2[:, :, :m ** 3]
+                        x0, _, x2, _, _, _, _ = val_dataset[i]
+                        x0 = x0.to(device)
+                        x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1)
+                        x0 = torch.repeat_interleave(x0, 64, dim=1)
+                        x2 = x2.to(device)
+                        x2 = torch.cat([x2, x0], dim=-1).clone()
                         with torch.no_grad():
                             x2_rec, _, _ = ema_list[0](x2)
                             val_loss += (x2_rec - x2).abs().mean()

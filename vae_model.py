@@ -189,10 +189,10 @@ def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
     recon_loss_other = F.l1_loss(recon_x[:, :, 125:],
                                  x[:, :, 125:], reduction="sum") / b * 10.0
     # Regularize angular encoding
-    ra_loss = ((recon_x[:, :, 126] ** 2.0 + recon_x[:, :, 127] ** 2.0 - 1.0).abs().sum() / b + 
-               (recon_x[:, :, 128] ** 2.0 + recon_x[:, :, 129] ** 2.0 - 1.0).abs().sum() / b +
-               (recon_x[:, :, 130] ** 2.0 + recon_x[:, :, 131] ** 2.0 - 1.0).abs().sum() / b +
-               (recon_x[:, :, 132] ** 2.0 + recon_x[:, :, 134] ** 2.0 - 1.0).abs().sum() / b
+    ra_loss = ((recon_x[:, :, 125] ** 2.0 + recon_x[:, :, 126] ** 2.0 - 1.0).abs().sum() / b + 
+               (recon_x[:, :, 127] ** 2.0 + recon_x[:, :, 128] ** 2.0 - 1.0).abs().sum() / b +
+               (recon_x[:, :, 129] ** 2.0 + recon_x[:, :, 130] ** 2.0 - 1.0).abs().sum() / b +
+               (recon_x[:, :, 131] ** 2.0 + recon_x[:, :, 132] ** 2.0 - 1.0).abs().sum() / b
                ) * 10
     # KL divergence
     KLD = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
