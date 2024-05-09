@@ -218,6 +218,7 @@ if __name__ == "__main__":
     input_data = torch.randn(1, 4, 125)
     output_data, q_loss, info = vae(input_data)
     indices = vae.get_normalized_indices(input_data)
+    print("Indices shape", indices.shape)
     loss, _ = loss_function(input_data, output_data, q_loss)
     loss.sum().backward() 
     print(loss)
@@ -225,5 +226,3 @@ if __name__ == "__main__":
         if param.grad is None:
             print(f"Parameter {name} did not receive gradients.")
 
-    #encoded = vae.encode_and_reparam(input_data)
-    #print(encoded.shape)
