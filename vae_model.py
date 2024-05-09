@@ -131,8 +131,9 @@ class VAE(nn.Module):
         h = self.fc4(h)
         return self.output_fc(h)
 
-    def decode_code(self, c):
+    def decode_code(self, c: torch.Tensor):
         B, L, C = c.shape
+        c = (c.clamp_(0, 1) * self.code_n).floor().long()
         quant = self.quantize.get_codebook_entry(c, None)
         quant = quant.reshape(B * L, self.g, self.g, self.g, -1).permute(0, 4, 1, 2, 3).contiguous()
         return self.decode(quant)
