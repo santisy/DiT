@@ -162,19 +162,17 @@ def main(args):
     # Prepare VAE model
     vae_model_list = nn.ModuleList()
     vae_ckpt = torch.load(args.vae_ckpt, map_location=map_fn)
-    vae_std_loaded = np.load(args.vae_std)
-    vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
-                    ]
     linear_flag = config.vae.linear
+    m = None
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
         if not linear_flag:
             vae_model = VAE(config.vae.layer_n,
-                        config.vae.in_ch,
-                        config.vae.latent_ch,
-                        m)
+                            config.vae.in_ch,
+                            config.vae.latent_ch,
+                            m,
+                            quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
@@ -194,22 +192,15 @@ def main(args):
     num_heads = config.model.num_heads
     depth = config.model.depth
     hidden_size = config.model.hidden_sizes[level_num]
-    if level_num == 2:
-        in_ch = dataset.get_level_vec_len(2)
-        in_ch = int(math.ceil(m / 2) ** 3 * config.vae.latent_ch)
-    elif level_num == 1: # Leaf 
-        # Length 14: orientation 8 + scales 3 + relative positions 3
-        in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
-    elif level_num == 0: # Root positions and scales
-        in_ch = 4
+    in_ch = int(math.ceil(m / 2) ** 3) + 14 + 4
 
     # Create DiT model
     model = DiT(
         # Data related
         in_channels=in_ch, # Combine to each children
         num_classes=config.data.num_classes,
-        condition_node_num=dataset.get_condition_num(level_num),
-        condition_node_dim=dataset.get_condition_dim(level_num),
+        condition_node_num=[],
+        condition_node_dim=[],
         # Network itself related
         hidden_size=hidden_size, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,
@@ -288,36 +279,19 @@ def main(args):
             p2 = p2.to(device)
             y = y.to(device)
 
-            # According to the level_num set the training target x and the conditions
-            if level_num == 0:
-                x = x0 
-                a = []
-                xc = []
-                positions = []
-            
-            if level_num == 1:
-                x = x1
-                xc = [x0,]
-                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),]
-                positions = [None,]
-            elif level_num == 2:
-                with torch.no_grad():
-                    x2_list = []
-                    for x2_ in torch.split(x2, 12, dim=0):
-                        x2_list.append(vae_model_list[0].encode_and_reparam(x2_) / vae_std_list[0])
-                    x2 = torch.cat(x2_list, dim=0).detach()
-                x = x2
-                B, L, C = x1.shape
-                x1 = x1.reshape(B, L // 8, 8, C)
-                x1 = x1.reshape(B, L // 8, 8 * C).contiguous()
-                xc = [x0, x1]
-                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),
-                     torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-                    ]
-                positions = [None, None]
+            with torch.no_grad():
+                x2_list = []
+                for x2_ in torch.split(x2, 12, dim=0):
+                    x2_list.append(vae_model_list[0].get_normalized_indices(x2_))
+                x2 = torch.cat(x2_list, dim=0).detach()
 
-            # Noise augmentation
-            xc = noise_conditioning(xc, a, diffusion)
+            x0 = torch.repeat_interleave(x0, 64, dim=1)
+            x = torch.cat([x2, x1, x0], dim=-1)
+
+            xc = []
+            a = []
+            positions = []
+
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             loss_dict = diffusion.training_losses(model, x, t,
@@ -398,7 +372,6 @@ if __name__ == "__main__":
     parser.add_argument("--resume", type=str, default=None)
 
     # VAE related
-    parser.add_argument("--vae-std", type=str, required=True)
     parser.add_argument("--vae-ckpt", type=str, required=True)
 
     args = parser.parse_args()
