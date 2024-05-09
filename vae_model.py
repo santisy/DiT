@@ -161,7 +161,7 @@ def loss_function(recon_x, x, q_loss):
     b = x.size(0) * x.size(1)
     recon_loss = F.l1_loss(recon_x, x, reduction="sum") / b
     # KL divergence
-    return recon_loss + q_loss.mean()
+    return recon_loss + q_loss.mean(), recon_loss
 
 class OnlineVariance(object):
     def __init__(self, num_features):

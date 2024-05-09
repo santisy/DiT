@@ -243,10 +243,12 @@ def main(args):
             x_list = [x2,]
 
             loss = 0
+            rec_loss = None
 
             for _, (x, model) in enumerate(zip(x_list, model_list)):
                 x_rec, q_loss, _ = model(x)
-                loss += loss_function(x_rec, x, q_loss)
+                loss_, rec_loss = loss_function(x_rec, x, q_loss)
+                loss += loss_
 
             opt.zero_grad()
             loss.backward()
@@ -256,7 +258,7 @@ def main(args):
                 update_ema(ema, model.module)
 
             # Log loss values:
-            running_loss += loss.item()
+            running_loss += rec_loss.item()
             log_steps += 1
             train_steps += 1
             if train_steps % args.log_every == 0:
