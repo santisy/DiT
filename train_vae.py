@@ -173,7 +173,8 @@ def main(args):
             model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
-                        m)
+                        m,
+                        quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
@@ -243,12 +244,10 @@ def main(args):
             x_list = [x2,]
 
             loss = 0
-            rec_loss = None
 
             for _, (x, model) in enumerate(zip(x_list, model_list)):
                 x_rec, q_loss, _ = model(x)
-                loss_, rec_loss = loss_function(x_rec, x, q_loss)
-                loss += loss_
+                loss += loss_function(x_rec, x, q_loss)
 
             opt.zero_grad()
             loss.backward()
@@ -258,7 +257,7 @@ def main(args):
                 update_ema(ema, model.module)
 
             # Log loss values:
-            running_loss += rec_loss.item()
+            running_loss += loss.item()
             log_steps += 1
             train_steps += 1
             if train_steps % args.log_every == 0:

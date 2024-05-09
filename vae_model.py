@@ -2,7 +2,9 @@ import math
 import torch
 from torch import nn
 from torch.nn import functional as F
+from einops import rearrange
 from taming_models import ResnetBlock, Downsample, Upsample, VectorQuantizer2
+from vector_quantize_pytorch import VectorQuantize
 
 class reshapeTo3D(nn.Module):
     def __init__(self, grid_size):
@@ -81,13 +83,15 @@ class VAE(nn.Module):
                  in_ch,
                  latent_ch=16,
                  grid_size=5,
+                 quant_version="v0",
                  *args,
                  **kwargs
                  ):
         super(VAE, self).__init__()
         embed_dim = latent_ch
-        self.code_n = 1024
+        self.code_n = 2048
         self.g = grid_size
+        self.quant_version = quant_version
 
         # Encoder
         self.input_fc = nn.Sequential(reshapeTo3D(grid_size),
@@ -99,10 +103,8 @@ class VAE(nn.Module):
         fc1.append(ResnetBlock(in_ch, in_ch * 2))
         fc1.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2 - 1)])
         self.fc1 = nn.Sequential(*fc1)
-        self.quant_conv = nn.Conv3d(in_ch * 2, embed_dim, 1, 1, 0)
 
         # Decoder
-        self.post_quant_conv = nn.Conv3d(embed_dim, in_ch * 2, 1, 1, 0)
         fc4 = []
         fc4.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2)])
         fc4.append(Upsample(in_ch * 2, True))
@@ -114,34 +116,54 @@ class VAE(nn.Module):
                                        nn.Sigmoid())
 
         # Quantizer
-        self.quantize = VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
-                                         remap=None,
-                                         sane_index_shape=False,
-                                         legacy=False)
+        if quant_version == "v0":
+            self.quantize = VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
+                                            remap=None,
+                                            sane_index_shape=False,
+                                            legacy=False)
+            self.quant_conv = nn.Conv3d(in_ch * 2, embed_dim, 1, 1, 0)
+            self.post_quant_conv = nn.Conv3d(embed_dim, in_ch * 2, 1, 1, 0)
+        elif quant_version == "v1":
+            self.quantize = VectorQuantize(dim = in_ch * 2,
+                                           codebook_size = self.code_n,
+                                           codebook_dim=embed_dim,
+                                           use_cosine_sim=True)
 
     def encode(self, x):
         h = self.input_fc(x)
         h = self.fc1(h)
-        h = self.quant_conv(h)
-        quant, q_loss, info = self.quantize(h)
-        return quant, q_loss, info
+        if self.quant_version == "v0":
+            h = self.quant_conv(h)
+            quant, q_loss, info = self.quantize(h)
+            indices = info[2]
+        elif self.quant_version == "v1":
+            z = rearrange(h, 'b c h w d -> b (h w d) c').contiguous()
+            quant, indices, q_loss = self.quantize(z)
+            quant = quant.permute(0, 2, 1).view(h.shape).contiguous()
+        return quant, q_loss, indices
 
     def decode(self, z):
-        h = self.post_quant_conv(z)
+        if self.quant_version == "v0":
+            h = self.post_quant_conv(z)
+        else:
+            h = z
         h = self.fc4(h)
         return self.output_fc(h)
 
     def decode_code(self, c: torch.Tensor):
         B, L, C = c.shape
         c = (c.clamp_(0, 1) * self.code_n).floor().long()
-        quant = self.quantize.get_codebook_entry(c, None)
+        if self.quant_version == "v0":
+            quant = self.quantize.get_codebook_entry(c, None)
+        elif self.quant_version == "v1":
+            quant = self.quantize.get_codes_from_indices(c)
         quant = quant.reshape(B * L, self.g, self.g, self.g, -1).permute(0, 4, 1, 2, 3).contiguous()
-        return self.decode(quant)
+        out = self.decode(quant)
+        return out
 
     def get_normalized_indices(self, x):
         B, L, C = x.shape
-        _, _, info = self.encode(x)
-        indices = info[2]
+        _, _, indices = self.encode(x)
         indices = indices / float(self.code_n)
         indices = indices.reshape(B, L, -1)
         return indices
@@ -192,11 +214,11 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    vae = VAE(4, 64, 16, 5)
+    vae = VAE(4, 64, 16, 5, quant_version="v1")
     input_data = torch.randn(1, 4, 125)
     output_data, q_loss, info = vae(input_data)
     indices = vae.get_normalized_indices(input_data)
-    loss = loss_function(input_data, output_data, q_loss)
+    loss, _ = loss_function(input_data, output_data, q_loss)
     loss.sum().backward() 
     print(loss)
     for name, param in vae.named_parameters():
