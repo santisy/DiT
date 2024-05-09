@@ -96,8 +96,8 @@ def random_sample_and_reshape(x, l, m, zero_ratio=None):
             assert zero_ratio < 1.0
             zero_num = int(l * zero_ratio)
             non_zero_num = l - zero_num
-            zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) == 4.0)[0]
-            non_zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) != 4.0)[0]
+            zero_indices = torch.where(x[i, :, -18:-10].sum(dim=1) == 4.0)[0]
+            non_zero_indices = torch.where(x[i, :, -18:-10].sum(dim=1) != 4.0)[0]
             out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
             out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
 
@@ -230,16 +230,19 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for _, _, x2, _, _, _, _ in loader:
+        for x0, _, x2, _, _, _, _ in loader:
 
             # To device
             #x0 = random_sample_and_reshape(x0.to(device), 64)
             #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
+            x0 = x0.to(device)
+            x2 = x2.to(device)
+            x2 = torch.cat([x2, x0[:, :, -7].unsqeeze(dim=-1), x0[:, :, -3:]], dim=-1).clone()
             if not linear_flag:
-                x2 = random_sample_and_reshape(x2.to(device), 512, m, zero_ratio=0.1)
+                x2 = random_sample_and_reshape(x2, 512, m, zero_ratio=0.1)
             else:
-                x2 = random_sample_and_reshape(x2.to(device), 1024, m, zero_ratio=0.1)
+                x2 = random_sample_and_reshape(x2, 1024, m, zero_ratio=0.1)
             x_list = [x2,]
 
             loss = 0
