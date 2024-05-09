@@ -2,7 +2,7 @@ import math
 import torch
 from torch import nn
 from torch.nn import functional as F
-from taming_models import ResnetBlock, Downsample, Upsample
+from taming_models import ResnetBlock, Downsample, Upsample, VectorQuantizer2
 
 class reshapeTo3D(nn.Module):
     def __init__(self, grid_size):
@@ -79,12 +79,16 @@ class VAE(nn.Module):
     def __init__(self,
                  layer_n,
                  in_ch,
-                 latent_ch,
-                 grid_size,
+                 latent_ch=16,
+                 grid_size=5,
                  *args,
                  **kwargs
                  ):
         super(VAE, self).__init__()
+        embed_dim = latent_ch
+        self.code_n = 2048
+        self.g = grid_size
+
         # Encoder
         self.input_fc = nn.Sequential(reshapeTo3D(grid_size),
                                       nn.Conv3d(1, in_ch, 3, 1, 1))
@@ -95,11 +99,10 @@ class VAE(nn.Module):
         fc1.append(ResnetBlock(in_ch, in_ch * 2))
         fc1.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2 - 1)])
         self.fc1 = nn.Sequential(*fc1)
-        self.fc2_mean = nn.Conv3d(in_ch * 2, latent_ch, 1, 1, 0)
-        self.fc2_logvar = nn.Conv3d(in_ch * 2, latent_ch, 1, 1, 0)
+        self.quant_conv = nn.Conv3d(in_ch * 2, embed_dim, 1, 1, 0)
 
         # Decoder
-        self.fc3 = nn.Conv3d(latent_ch, in_ch * 2, 1, 1, 0)
+        self.post_quant_conv = nn.Conv3d(embed_dim, in_ch * 2, 1, 1, 0)
         fc4 = []
         fc4.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2)])
         fc4.append(Upsample(in_ch * 2, True))
@@ -110,49 +113,54 @@ class VAE(nn.Module):
         self.output_fc = nn.Sequential(nn.Conv3d(in_ch, 1, 3, 1, 1),
                                        nn.Sigmoid())
 
-    def encode(self, x):
-        x = self.input_fc(x)
-        h = self.fc1(x)
-        return self.fc2_mean(h), self.fc2_logvar(h)
+        # Quantizer
+        self.quantize = VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
+                                         remap=None,
+                                         sane_index_shape=False,
+                                         legacy=False)
 
-    def reparameterize(self, mean, logvar):
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return mean + eps*std
+    def encode(self, x):
+        h = self.input_fc(x)
+        h = self.fc1(h)
+        h = self.quant_conv(h)
+        quant, q_loss, info = self.quantize(h)
+        return quant, q_loss, info
 
     def decode(self, z):
-        h = self.fc3(z)
+        h = self.post_quant_conv(z)
         h = self.fc4(h)
         return self.output_fc(h)
 
-    def encode_and_reparam(self, x):
-        B, L, C = x.shape
-        mean, logvar = self.encode(x)
-        out = self.reparameterize(mean, logvar)
-        out = out.reshape(B, L, -1)
+    def decode_code(self, c):
+        B, L, C = c.shape
+        quant = self.quantize.get_codebook_entry(c, None)
+        quant = quant.reshape(B * L, self.g, self.g, self.g, -1).permute(0, 4, 1, 2, 3).contiguous()
+        return self.decode(quant)
 
-        return out
+    def get_normalized_indices(self, x):
+        B, L, C = x.shape
+        _, _, info = self.encode(x)
+        indices = info[2]
+        indices = indices / float(self.code_n)
+        indices = indices.reshape(B, L, -1)
+        return indices
         
     def forward(self, x):
         B, L, C = x.shape
 
-        mean, logvar = self.encode(x)
-        z = self.reparameterize(mean, logvar)
-        out =  self.decode(z)
+        quant, q_loss, info = self.encode(x)
+        out =  self.decode(quant)
 
         out = out.reshape(B, L, C)
-        mean = mean.reshape(B, L, -1)
-        logvar = logvar.reshape(B, L, -1)
 
-        return out, mean, logvar
+        return out, q_loss, info
 
 # Loss function
-def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
+def loss_function(recon_x, x, q_loss):
     b = x.size(0) * x.size(1)
     recon_loss = F.l1_loss(recon_x, x, reduction="sum") / b
     # KL divergence
-    KLD = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
-    return recon_loss + KLD * kl_weight
+    return recon_loss + q_loss.mean()
 
 class OnlineVariance(object):
     def __init__(self, num_features):
@@ -183,15 +191,16 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    vae = VAE(4, 64, 2, 7)
-    input_data = torch.randn(1, 4, 343)
-    output_data, mean, logvar = vae(input_data)
-    loss = loss_function(input_data, output_data, mean, logvar)
+    vae = VAE(4, 64, 16, 5)
+    input_data = torch.randn(1, 4, 125)
+    output_data, q_loss, info = vae(input_data)
+    indices = vae.get_normalized_indices(input_data)
+    loss = loss_function(input_data, output_data, q_loss)
     loss.sum().backward() 
     print(loss)
     for name, param in vae.named_parameters():
         if param.grad is None:
             print(f"Parameter {name} did not receive gradients.")
 
-    encoded = vae.encode_and_reparam(input_data)
-    print(encoded.shape)
+    #encoded = vae.encode_and_reparam(input_data)
+    #print(encoded.shape)

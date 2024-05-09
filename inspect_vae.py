@@ -77,6 +77,11 @@ def main(args):
                         shuffle=False, num_workers=2)
 
     # Go through the whole dataset
+    npy_out = os.path.join(out_dir, f"{exp_name}-{ckpt_name}-{dataset_name}-stds")
+    if os.path.isfile(npy_out + ".npz"):
+        std = torch.from_numpy(np.load(npy_out + ".npz")["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device)
+    else:
+        std = 1.0
     count = 0
     for x0, x1, x2, _, _, _, _ in tqdm(loader):
         x0 = x0.to(device)
@@ -88,6 +93,8 @@ def main(args):
                 #x1_rec, _, _ = vae_model_list[0](x1)
                 x2_other = x2[:, :, m**3:]
                 x2 = x2[:, :, :m ** 3]
+                encoded = vae_model_list[0].encode_and_reparam(x2)
+                encoded_divided = encoded / std
                 x2_rec, _, _ = vae_model_list[0](x2)
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
@@ -122,8 +129,7 @@ def main(args):
 
     if not args.inspect_recon:
         # Dump the statistics
-        np.savez(os.path.join(out_dir, f"{exp_name}-{ckpt_name}-{dataset_name}-stds"),
-                std2=online_variance_list[0].std)
+        np.savez(npy_out, std2=online_variance_list[0].std)
 
 
 if __name__ == "__main__":

@@ -245,8 +245,8 @@ def main(args):
             loss = 0
 
             for _, (x, model) in enumerate(zip(x_list, model_list)):
-                x_rec, mean, logvar = model(x)
-                loss += loss_function(x_rec, x, mean, logvar)
+                x_rec, q_loss, _ = model(x)
+                loss += loss_function(x_rec, x, q_loss)
 
             opt.zero_grad()
             loss.backward()
