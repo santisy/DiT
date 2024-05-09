@@ -129,6 +129,9 @@ class VAE(nn.Module):
                                            codebook_dim=embed_dim,
                                            use_cosine_sim=True)
 
+    def get_code_book_n(self):
+        return self.code_n
+
     def encode(self, x):
         h = self.input_fc(x)
         h = self.fc1(h)
