@@ -77,6 +77,7 @@ def main(args):
                         shuffle=False, num_workers=2)
 
     # Go through the whole dataset
+    count = 0
     for x0, x1, x2, _, _, _, _ in tqdm(loader):
         x0 = x0.to(device)
         x1 = x1.to(device)
@@ -85,6 +86,7 @@ def main(args):
             if args.inspect_recon:
                 #x0_rec, _, _ = vae_model_list[0](x0)
                 #x1_rec, _, _ = vae_model_list[0](x1)
+                x2_other = x2[:, :, m**3:]
                 x2 = x2[:, :, :m ** 3]
                 x2_rec, _, _ = vae_model_list[0](x2)
                 ##loss0 = (x0 - x0_rec).abs().mean()
@@ -97,15 +99,19 @@ def main(args):
                 ##x0 = dataset.denormalize(x0_rec[0], 0).detach().cpu()
                 #x1 = dataset.denormalize(x1_rec[0], 1).detach().cpu()
                 #x2 = dataset.denormalize(x2_rec[0], 2).detach().cpu()
-                #x0_out = torch.zeros_like(x0[0])
-                #x0_out[:, -7] = x0[0, :, -7]
-                #x0_out[:, -3:] = x0[0, :, -3:]
+                x0_out = torch.zeros_like(x0)
+                x0_out[:, :, -7] = x0[:, :, -7]
+                x0_out[:, :, -3:] = x0[:, :, -3:]
+                x0 = x0_out.clone()
                 #x0 = dataset.denormalize(x0_out.clone(), 0).detach().cpu()
-                #x0 = dataset.denormalize(x0[0], 0).detach().cpu()
-                #x1 = dataset.denormalize(x1[0], 1).detach().cpu()
-                #x2 = dataset.denormalize(x2[0], 2).detach().cpu()
-                #load_utils.dump_to_bin(os.path.join("vae_recon_dir", f"out_{i:04d}.bin"),
-                #                       x0, x1, x2, dataset.octree_root_num)
+                x2 = torch.cat([x2_rec, x2_other], dim=-1).clone()
+                x1 = torch.zeros_like(x1)
+                x0 = dataset.denormalize(x0[0], 0).detach().cpu()
+                x1 = dataset.denormalize(x1[0], 1).detach().cpu()
+                x2 = dataset.denormalize(x2[0], 2).detach().cpu()
+                load_utils.dump_to_bin(os.path.join("vae_recon_dir", f"out_{count:04d}.bin"),
+                                       x0, x1, x2, dataset.octree_root_num)
+                count += 1
             else:
                 x2 = x2[:, :, :m ** 3]
                 with torch.no_grad():
