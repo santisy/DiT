@@ -2,7 +2,7 @@ model:
     depth: 16
     mlp_ratio: 2.0
     cross_layers: [2, 4, 6, 8, 10, 14]
-    num_heads: 16
+    num_heads: 32
     add_inject: true
     pos_emedding_version: "v2"
     hidden_sizes: [1024, 1024, 1024]
