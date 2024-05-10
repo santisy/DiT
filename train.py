@@ -33,6 +33,7 @@ from models import DiT
 from vae_model import VAE, VAELinear
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
+from torch.cuda.amp import autocast
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
@@ -162,19 +163,17 @@ def main(args):
     # Prepare VAE model
     vae_model_list = nn.ModuleList()
     vae_ckpt = torch.load(args.vae_ckpt, map_location=map_fn)
-    vae_std_loaded = np.load(args.vae_std)
-    vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
-                    ]
     linear_flag = config.vae.linear
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
         if not linear_flag:
             vae_model = VAE(config.vae.layer_n,
-                        config.vae.in_ch,
-                        config.vae.latent_ch,
-                        m)
+                            config.vae.in_ch,
+                            config.vae.latent_ch,
+                            m,
+                            quant_code_n=config.vae.get("quant_code_n", 2048),
+                            quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
@@ -196,10 +195,12 @@ def main(args):
     hidden_size = config.model.hidden_sizes[level_num]
     if level_num == 2:
         in_ch = dataset.get_level_vec_len(2)
-        in_ch = int(math.ceil(m / 2) ** 3 * config.vae.latent_ch)
+        in_ch = int(math.ceil(m / 2) ** 3)
+        num_heads = num_heads * 2
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
         in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
+        num_heads = num_heads * 2
     elif level_num == 0: # Root positions and scales
         in_ch = 4
 
@@ -215,6 +216,7 @@ def main(args):
         mlp_ratio=config.model.mlp_ratio,
         depth=depth,
         num_heads=num_heads,
+        cross_layers=config.model.cross_layers if level_num == 2 else [],
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
@@ -303,9 +305,10 @@ def main(args):
             elif level_num == 2:
                 with torch.no_grad():
                     x2_list = []
-                    for x2_ in torch.split(x2, 12, dim=0):
-                        x2_list.append(vae_model_list[0].encode_and_reparam(x2_) / vae_std_list[0])
-                    x2 = torch.cat(x2_list, dim=0).detach()
+                for x2_ in torch.split(x2, 8, dim=0):
+                    with autocast():
+                        x2_list.append(vae_model_list[0].get_normalized_indices(x2_))
+                    x2 = torch.cat(x2_list, dim=0).detach().float()
                 x = x2
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // 8, 8, C)
@@ -398,7 +401,6 @@ if __name__ == "__main__":
     parser.add_argument("--resume", type=str, default=None)
 
     # VAE related
-    parser.add_argument("--vae-std", type=str, required=True)
     parser.add_argument("--vae-ckpt", type=str, required=True)
 
     args = parser.parse_args()
