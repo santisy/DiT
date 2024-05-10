@@ -16,6 +16,7 @@ from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from torch.cuda.amp import autocast
 import numpy as np
 from tqdm import tqdm
 import math
@@ -95,7 +96,9 @@ def main(args):
                 #x1_rec, _, _ = vae_model_list[0](x1)
                 x2_other = x2[:, :, m**3:]
                 x2 = x2[:, :, :m ** 3]
-                indices = vae_model_list[0].get_normalized_indices(x2)
+                with autocast():
+                    indices = vae_model_list[0].get_normalized_indices(x2)
+                indices = indices.float()
                 x2_rec = vae_model_list[0].decode_code(indices)
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
