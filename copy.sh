@@ -10,6 +10,5 @@ DATA_ZIP_FILE=$(basename ${DATA_ZIP_PATH})
 cp $DATA_ZIP_PATH $SLURM_TMPDIR
 cd $SLURM_TMPDIR && unzip $DATA_ZIP_FILE && rm $DATA_ZIP_FILE
 cd $WORK_DIR
-cp datasets/vae_stds/vae_0505_c-vae_0040000-shapenet_airplane_l_corrected-stds.npz $SLURM_TMPDIR
-cp training_runs/vae_0505_c/vae_0040000.pt $SLURM_TMPDIR
+cp training_runs/vae_0509_VQ/vae_0020000.pt $SLURM_TMPDIR
 

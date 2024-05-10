@@ -33,6 +33,7 @@ from models import DiT
 from vae_model import VAE, VAELinear
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
+from torch.cuda.amp import autocast
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
@@ -282,9 +283,10 @@ def main(args):
 
             with torch.no_grad():
                 x2_list = []
-                for x2_ in torch.split(x2, 12, dim=0):
-                    x2_list.append(vae_model_list[0].get_normalized_indices(x2_))
-                x2 = torch.cat(x2_list, dim=0).detach()
+                for x2_ in torch.split(x2, 8, dim=0):
+                    with autocast():
+                        x2_list.append(vae_model_list[0].get_normalized_indices(x2_))
+                x2 = torch.cat(x2_list, dim=0).detach().float()
 
             x0 = torch.repeat_interleave(x0, 64, dim=1)
             x = torch.cat([x2, x1, x0], dim=-1)
