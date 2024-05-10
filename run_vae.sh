@@ -42,7 +42,7 @@ torchrun \
     --master_port=$MASTER_PORT \
 train_vae.py --exp-id vae_0509_02_VQ \
     --epoch 2000 \
-    --global-batch-size 48 \
+    --global-batch-size 32 \
     --config-file configs/OFALG_config_v8_nl_small.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane_l_corrected \
     --num-workers 24 \

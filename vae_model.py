@@ -117,6 +117,7 @@ class VAE(nn.Module):
                                        nn.Sigmoid())
 
         # Quantizer
+        print(f"\033[92m Use quant version {quant_version}.\033[00m")
         if quant_version == "v0":
             self.quantize = VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
                                             remap=None,
