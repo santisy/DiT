@@ -16,6 +16,7 @@ from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from torch.cuda.amp import autocast
 import numpy as np
 from tqdm import tqdm
 import math
@@ -59,7 +60,9 @@ def main(args):
             vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
-                        m)
+                        m,
+                        quant_code_n=config.vae.get("quant_code_n", 2048),
+                        quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
@@ -77,6 +80,11 @@ def main(args):
                         shuffle=False, num_workers=2)
 
     # Go through the whole dataset
+    npy_out = os.path.join(out_dir, f"{exp_name}-{ckpt_name}-{dataset_name}-stds")
+    if os.path.isfile(npy_out + ".npz"):
+        std = torch.from_numpy(np.load(npy_out + ".npz")["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device)
+    else:
+        std = 1.0
     count = 0
     for x0, x1, x2, _, _, _, _ in tqdm(loader):
         x0 = x0.to(device)
@@ -88,7 +96,10 @@ def main(args):
                 #x1_rec, _, _ = vae_model_list[0](x1)
                 x2_other = x2[:, :, m**3:]
                 x2 = x2[:, :, :m ** 3]
-                x2_rec, _, _ = vae_model_list[0](x2)
+                with autocast():
+                    indices = vae_model_list[0].get_normalized_indices(x2)
+                indices = indices.float()
+                x2_rec = vae_model_list[0].decode_code(indices)
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
                 loss2 = (x2 - x2_rec).abs() / (x2.size(1) * x2.size(0))
@@ -122,8 +133,7 @@ def main(args):
 
     if not args.inspect_recon:
         # Dump the statistics
-        np.savez(os.path.join(out_dir, f"{exp_name}-{ckpt_name}-{dataset_name}-stds"),
-                std2=online_variance_list[0].std)
+        np.savez(npy_out, std2=online_variance_list[0].std)
 
 
 if __name__ == "__main__":

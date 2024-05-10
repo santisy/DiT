@@ -46,10 +46,6 @@ def main(args):
     # VAE model and stats loading
     vae_model_list = nn.ModuleList()
     vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
-    vae_std_loaded = np.load(args.vae_std)
-    vae_std_list = [
-                    torch.from_numpy(vae_std_loaded["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device),
-                    ]
 
     linear_flag = config.vae.linear
     m = None
@@ -60,7 +56,9 @@ def main(args):
             vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
-                        m)
+                        m,
+                        quant_code_n=config.vae.get("quant_code_n", 2048),
+                        quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
@@ -84,12 +82,14 @@ def main(args):
         if l == 2:
             in_ch = dataset.get_level_vec_len(2)
             m_ = math.ceil(m / 2)
-            in_ch = int(m_ ** 3 * config.vae.latent_ch)
+            in_ch = int(m_ ** 3)
             in_ch_list.append(in_ch)
+            num_heads = num_heads * 2
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
             in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
             in_ch_list.append(in_ch)
+            num_heads = num_heads * 2
         elif l == 0: # Root positions and scales
             in_ch = 4
             in_ch_list.append(in_ch)
@@ -106,6 +106,7 @@ def main(args):
             mlp_ratio=config.model.mlp_ratio,
             depth=depth,
             num_heads=num_heads,
+            cross_layers=config.model.cross_layers if l == 2 else [],
             learn_sigma=config.diffusion.get("learn_sigma", True),
             # Other flags
             add_inject=config.model.add_inject,
@@ -163,8 +164,8 @@ def main(args):
                                               device=device)
 
             # Append the generated latents for the following generation
-            if l in [0, 1]:
-                samples = samples.clip_(0, 1)
+            samples = samples.clip_(0, 1)
+
             if l == 1:
                 B, L, C = samples.shape
                 samples = samples.reshape(B, L // 8, 8, C)
@@ -173,10 +174,7 @@ def main(args):
 
             if l == 2:
                 # Rescale and decode
-                samples = samples * vae_std_list[0]
-                samples = samples.reshape(batch_size * length, config.vae.latent_ch, m_, m_, m_)
-                samples = vae_model_list[0].decode(samples)
-                samples = samples.reshape(batch_size, length, -1)
+                samples = vae_model_list[0].decode_code(samples)
                 B, L, C = xc[-2].shape
                 x2_non_V = xc[-2].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
                 decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
