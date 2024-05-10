@@ -59,7 +59,9 @@ def main(args):
             vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
-                        m)
+                        m,
+                        quant_code_n=config.vae.get("quant_code_n", 2048),
+                        quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)
             latent_dim = in_ch // config.vae.latent_ratio
@@ -93,9 +95,8 @@ def main(args):
                 #x1_rec, _, _ = vae_model_list[0](x1)
                 x2_other = x2[:, :, m**3:]
                 x2 = x2[:, :, :m ** 3]
-                encoded = vae_model_list[0].encode_and_reparam(x2)
-                encoded_divided = encoded / std
-                x2_rec, _, _ = vae_model_list[0](x2)
+                indices = vae_model_list[0].get_normalized_indices(x2)
+                x2_rec = vae_model_list[0].decode_code(indices)
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
                 loss2 = (x2 - x2_rec).abs() / (x2.size(1) * x2.size(0))

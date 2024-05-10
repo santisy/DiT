@@ -22,4 +22,5 @@ vae:
     in_ch: 64
     latent_ch: 128
     latent_ratio: 4
+    quant_code_n: 1024
     linear: false

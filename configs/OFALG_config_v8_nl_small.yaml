@@ -23,4 +23,5 @@ vae:
     latent_ch: 32
     latent_ratio: 4
     quant_version: "v1"
+    quant_code_n: 2048
     linear: false

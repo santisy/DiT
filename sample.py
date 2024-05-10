@@ -57,6 +57,7 @@ def main(args):
                             config.vae.in_ch,
                             config.vae.latent_ch,
                             m,
+                            quant_code_n=config.vae.get("quant_code_n", 2048),
                             quant_version=config.vae.get("quant_version", "v0"))
         else:
             in_ch = int(m ** 3)

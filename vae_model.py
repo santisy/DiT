@@ -83,13 +83,14 @@ class VAE(nn.Module):
                  in_ch,
                  latent_ch=16,
                  grid_size=5,
+                 quant_code_n=2048,
                  quant_version="v0",
                  *args,
                  **kwargs
                  ):
         super(VAE, self).__init__()
         embed_dim = latent_ch
-        self.code_n = 2048
+        self.code_n = quant_code_n
         self.g = grid_size
         self.quant_version = quant_version
 
@@ -160,7 +161,7 @@ class VAE(nn.Module):
             quant = self.quantize.get_codebook_entry(c, None)
         elif self.quant_version == "v1":
             quant = self.quantize.get_codes_from_indices(c)
-        quant = quant.reshape(B * L, self.g, self.g, self.g, -1).permute(0, 4, 1, 2, 3).contiguous()
+        quant = quant.reshape(B * L, 3, 3, 3, -1).permute(0, 4, 1, 2, 3).contiguous()
         out = self.decode(quant)
         out = out.reshape(B, L, -1)
         return out
