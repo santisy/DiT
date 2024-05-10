@@ -91,6 +91,7 @@ def main(args):
         num_heads=num_heads,
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
+        cross_layers=config.model.cross_layers,
         add_inject=config.model.add_inject,
         aligned_gen=True,
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
