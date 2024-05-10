@@ -48,5 +48,5 @@ train.py --exp-id diff_0509 \
     --num-workers 24 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
-    --vae-ckpt training_runs/vae_0509_VQ/vae_0020000.pt \
+    --vae-ckpt training_runs/vae_0509_VQ/vae_0030000.pt \
     --level-num 2
