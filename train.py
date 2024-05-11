@@ -219,6 +219,7 @@ def main(args):
         level_num=level_num
     ).to(device)
     if edm_flag:
+        print("\033[92mUse EDM.\033[00m")
         model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)
         edm_loss = EDMLoss()
     else:
@@ -302,11 +303,11 @@ def main(args):
             a = []
             positions = []
 
-            t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             if not edm_flag:
+                t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
                 loss_dict = diffusion.training_losses(model, x, t,
-                                                    model_kwargs=model_kwargs)
+                                                      model_kwargs=model_kwargs)
                 loss = loss_dict["loss"].mean()
             else:
                 loss = edm_loss(model, x, model_kwargs=model_kwargs)
