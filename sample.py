@@ -23,6 +23,7 @@ from vae_model import VAE, VAELinear
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
+from edm import EDMPrecond, EDMLoss
 
 
 def main(args):
@@ -76,6 +77,7 @@ def main(args):
     depth = config.model.depth
     hidden_size = config.model.hidden_sizes[2]
     in_ch = int(math.ceil(m / 2) ** 3) + 14 + 4
+    edm_flag = config.model.get("use_EDM", False)
 
     # Create DiT model
     model = DiT(
@@ -96,6 +98,12 @@ def main(args):
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=2
     ).to(device)
+    if edm_flag:
+        model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)
+        edm_loss = EDMLoss()
+    else:
+        diffusion = create_diffusion(timestep_respacing="",
+                                    **config.diffusion)
 
     # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
     ckpt_path = args.ckpt[0]
@@ -104,9 +112,6 @@ def main(args):
     model.load_state_dict(model_ckpt["model"])
     model.to(device)
     model.eval()  # important!
-
-    diffusion = create_diffusion(timestep_respacing="",
-                                 **config.diffusion)
 
     batch_size = args.sample_batch_size
     sample_num = args.sample_num
@@ -135,13 +140,17 @@ def main(args):
         model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
         # Sample
-        samples = diffusion.p_sample_loop(model.forward,
-                                          z.shape,
-                                          z,
-                                          model_kwargs=model_kwargs,
-                                          clip_denoised=False,
-                                          progress=False,
-                                          device=device)
+        if not edm_flag:
+            samples = diffusion.p_sample_loop(model.forward,
+                                            z.shape,
+                                            z,
+                                            model_kwargs=model_kwargs,
+                                            clip_denoised=False,
+                                            progress=False,
+                                            device=device)
+        else:
+            batch_seed = (torch.arange(batch_size) + seed).to(device)
+            samples = model.sample(model_kwargs, )
 
         # Append the generated latents for the following generation
         samples = samples.clip_(0, 1)

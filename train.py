@@ -34,6 +34,7 @@ from vae_model import VAE, VAELinear
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
 from torch.cuda.amp import autocast
+from edm import EDMPrecond, EDMLoss
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
@@ -195,6 +196,7 @@ def main(args):
     depth = config.model.depth
     hidden_size = config.model.hidden_sizes[2]
     in_ch = int(math.ceil(m / 2) ** 3) + 14 + 4
+    edm_flag = config.model.get("use_EDM", False)
 
     # Create DiT model
     model = DiT(
@@ -215,6 +217,12 @@ def main(args):
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num
     ).to(device)
+    if edm_flag:
+        model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)
+        edm_loss = EDMLoss()
+    else:
+        diffusion = create_diffusion(timestep_respacing="",
+                                    **config.diffusion)
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model)  # Create an EMA of the model for use after training
     if resume_ckpt is not None:
@@ -222,8 +230,6 @@ def main(args):
         ema.load_state_dict(resume_ckpt["ema"])
     requires_grad(ema, False)
     model = DDP(model, device_ids=[rank])
-    diffusion = create_diffusion(timestep_respacing="",
-                                 **config.diffusion)
     logger.info(f"Diffusion model created.")
 
     #vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
@@ -297,9 +303,12 @@ def main(args):
 
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
-            loss_dict = diffusion.training_losses(model, x, t,
-                                                  model_kwargs=model_kwargs)
-            loss = loss_dict["loss"].mean()
+            if not edm_flag:
+                loss_dict = diffusion.training_losses(model, x, t,
+                                                    model_kwargs=model_kwargs)
+                loss = loss_dict["loss"].mean()
+            else:
+                loss = edm_loss(model, x, model_kwargs=model_kwargs)
             opt.zero_grad()
             loss.backward()
             opt.step()
