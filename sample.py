@@ -164,7 +164,7 @@ def main(args):
         sample_[:, :, -3:] = samples[:, :, -3:].reshape(batch_size, length // 64, 64, 3).mean(dim=-2)
         decoded.append(sample_.clone())
         # level 2
-        indices = samples[:, :, :3 ** 3]
+        indices = samples[:, :, :3 ** 3].clone().contiguous()
         grid_values = vae_model_list[0].decode_code(indices)
         x2 = torch.cat([grid_values, samples[:, :, 3 ** 3:3 ** 3 + 14]], dim=-1)
         decoded.append(x2)
