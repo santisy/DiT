@@ -160,6 +160,8 @@ def main(args):
 
     # Create dataset
     dataset = OFLAGDataset(args.data_root, **config.data)
+    in_ch = dataset.get_level_vec_len(2)
+    m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
     # Prepare VAE model
     if level_num == 2:
@@ -167,8 +169,6 @@ def main(args):
         vae_ckpt = torch.load(args.vae_ckpt, map_location=map_fn)
         linear_flag = config.vae.linear
         for l in range(2, 3):
-            in_ch = dataset.get_level_vec_len(l)
-            m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
             if not linear_flag:
                 vae_model = VAE(config.vae.layer_n,
                                 config.vae.in_ch,
@@ -220,7 +220,7 @@ def main(args):
         mlp_ratio=config.model.mlp_ratio,
         depth=depth,
         num_heads=num_heads,
-        cross_layers=config.model.cross_layers if level_num == 2 else [],
+        cross_layers=config.model.cross_layers if level_num != 0 else [],
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
