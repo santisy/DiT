@@ -290,7 +290,7 @@ def main(args):
 
             with torch.no_grad():
                 x2_list = []
-                for x2_ in torch.split(x2, 8, dim=0):
+                for x2_ in torch.split(x2, 24, dim=0):
                     with autocast():
                         x2_list.append(vae_model_list[0].get_normalized_indices(x2_))
                 x2 = torch.cat(x2_list, dim=0).detach().float()
