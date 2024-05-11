@@ -151,7 +151,7 @@ def main(args):
                                             device=device)
         else:
             batch_seeds = (torch.arange(batch_size) + seed).to(device)
-            samples = model.sample(model_kwargs, batch_seeds)
+            samples = model.sample(model_kwargs, batch_seeds, num_steps=45)
 
         # Append the generated latents for the following generation
         samples = samples.clip_(0, 1)
