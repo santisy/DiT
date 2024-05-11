@@ -27,7 +27,7 @@ echo "NPROCS=$NPROCS"
 
 # Copy data to local
 WORK_DIR=$(pwd)
-DATA_ZIP_PATH=/home/dya62/scratch/datasets/shapenet_airplane_l.zip
+DATA_ZIP_PATH=/home/dya62/scratch/datasets/shapenet_airplane_l_corrected.zip
 DATA_ZIP_FILE=$(basename ${DATA_ZIP_PATH})
 cp $DATA_ZIP_PATH $SLURM_TMPDIR
 cd $SLURM_TMPDIR && unzip $DATA_ZIP_FILE && rm $DATA_ZIP_FILE
@@ -48,5 +48,5 @@ train.py --exp-id diff_0509 \
     --num-workers 24 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
-    --vae-ckpt training_runs/vae_0509_VQ/vae_0020000.pt \
+    --vae-ckpt training_runs/vae_0509_VQ/vae_0030000.pt \
     --level-num 2

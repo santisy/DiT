@@ -1,7 +1,7 @@
 model:
-    depth: 16
+    depth: 24
     mlp_ratio: 2.0
-    cross_layers: [2, 4, 6, 8, 10, 14]
+    cross_layers: []
     num_heads: 32
     add_inject: true
     pos_emedding_version: "v2"
@@ -23,5 +23,5 @@ vae:
     latent_ch: 32
     latent_ratio: 4
     quant_version: "v1"
-    quant_code_n: 2048
+    quant_code_n: 1024
     linear: false
