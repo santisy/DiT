@@ -157,6 +157,7 @@ class VAE(nn.Module):
     def decode_code(self, c: torch.Tensor):
         B, L, C = c.shape
         c = (c.clamp_(0, 1) * self.code_n).floor().long()
+        c = torch.clamp(c, 0, self.code_n - 1)
         if self.quant_version == "v0":
             quant = self.quantize.get_codebook_entry(c, None)
         elif self.quant_version == "v1":
