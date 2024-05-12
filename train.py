@@ -309,7 +309,7 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),]
+                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 with torch.no_grad():
@@ -323,8 +323,8 @@ def main(args):
                 x1 = x1.reshape(B, L // 8, 8, C)
                 x1 = x1.reshape(B, L // 8, 8 * C).contiguous()
                 xc = [x0, x1]
-                a = [torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device),
-                     torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
+                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),
+                     torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device)
                     ]
                 positions = [None, None]
 
