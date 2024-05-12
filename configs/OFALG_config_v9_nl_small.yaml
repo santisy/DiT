@@ -1,0 +1,29 @@
+model:
+    depth: 24
+    mlp_ratio: 2.0
+    cross_layers: []
+    num_heads: 32
+    add_inject: true
+    pos_emedding_version: "v2"
+    hidden_sizes: [1024, 1024, 1024]
+
+data:
+    num_classes: -1
+    octree_root_num: 64
+    unit_length_list: [361, 139, 139]
+
+diffusion:
+    noise_schedule: "squaredcos_cap_v2"
+    learn_sigma: false
+    diffusion_steps: 1000
+
+vae:
+    layer_n: 2
+    in_ch: 64
+    latent_ch: 32
+    latent_ratio: 4
+    quant_version: "v1"
+    quant_code_n: 512
+    quant_heads: 2
+    downsample_n: 2
+    linear: false

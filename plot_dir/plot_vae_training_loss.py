@@ -20,7 +20,7 @@ def parse_log_file(log_file):
                     losses.append(loss)
     return losses
 
-def main(log_files, smooth_factor=10):
+def main(log_files, start_ratio, smooth_factor=10):
     plt.figure(figsize=(10, 6))
     colors = ['navy', 'darkgreen', 'darkred', 'black']  # Formal color choices
     ax = plt.gca()
@@ -28,8 +28,10 @@ def main(log_files, smooth_factor=10):
         losses = parse_log_file(log_file)
         min_length = min(map(len, [parse_log_file(f) for f in log_files]))
         losses = losses[:min_length]
+        start_at = int(len(losses) * start_ratio)
+        losses = losses[start_at:]
         losses_smoothed = smooth(losses, smooth_factor)
-        plt.plot(np.arange(min_length) * 100, losses_smoothed, label=f'{log_file.split("/")[-1].split(".")[0]}', color=colors[i % len(colors)], linewidth=3)
+        plt.plot(np.arange(start_at, min_length) * 100, losses_smoothed, label=f'{log_file.split("/")[-1].split(".")[0]}', color=colors[i % len(colors)], linewidth=3)
     
     #plt.title('Training Loss Over Time', fontsize=18)
     plt.xlabel('Iterations', fontsize=20)
@@ -48,6 +50,7 @@ def main(log_files, smooth_factor=10):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plot training loss from log files.')
     parser.add_argument('log_files', type=str, nargs='+', help='Path to the log files to parse and plot')
+    parser.add_argument("-s", "--start_ratio", type=float, default=1.0)
     args = parser.parse_args()
-    main(args.log_files)
+    main(args.log_files, args.start_ratio)
 

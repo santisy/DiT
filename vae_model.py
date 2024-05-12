@@ -1,9 +1,13 @@
+import math
 import torch
 from torch import nn
 from torch.nn import functional as F
 from einops import rearrange
 from taming_models import ResnetBlock, Downsample, Upsample, VectorQuantizer2
+from taming_models import Downsample2, Upsample2, Downsample3, Upsample3
 from vector_quantize_pytorch import VectorQuantize
+
+from functools import partial
 
 class reshapeTo3D(nn.Module):
     def __init__(self, grid_size):
@@ -14,6 +18,16 @@ class reshapeTo3D(nn.Module):
         B, L, C = x.shape
         x = x.reshape(B * L, C)
         x = x.reshape(B * L, 1, self._g, self._g, self._g)
+        return x
+
+class reshapeTo1D(nn.Module):
+    def __init__(self, grid_size):
+        self._g = grid_size
+        super(reshapeTo1D, self).__init__()
+        
+    def forward(self, x):
+        B, L, C = x.shape
+        x = x.reshape(B * L, 1, C).contiguous()
         return x
 
 class VAELinear(nn.Module):
@@ -84,6 +98,9 @@ class VAE(nn.Module):
                  grid_size=5,
                  quant_code_n=2048,
                  quant_version="v0",
+                 quant_heads=1,
+                 downsample_n=2,
+                 level_num=2,
                  *args,
                  **kwargs
                  ):
@@ -91,28 +108,53 @@ class VAE(nn.Module):
         embed_dim = latent_ch
         self.code_n = quant_code_n
         self.g = grid_size
+        self.m_ = math.ceil(grid_size / (2 ** downsample_n))
         self.quant_version = quant_version
+        self.downsample_n = downsample_n
+        self.level_num = level_num
+
+        if level_num == 2:
+            conv = nn.Conv3d
+            reshapeModule = reshapeTo3D
+            downsample1 = partial(Downsample, with_conv=True)
+            downsample2 = partial(Downsample2, with_conv=True)
+            upsample1 = partial(Upsample, with_conv=True)
+            upsample2 = partial(Upsample2, with_conv=True)
+        else:
+            quant_heads = 1
+            conv = nn.Conv1d
+            reshapeModule = reshapeTo1D
+            downsample1 = downsample2 = partial(Downsample3, with_conv=True)
+            upsample1 = upsample2 = partial(Upsample3, with_conv=True)
+
+        resnet_block = partial(ResnetBlock, conv=conv)
 
         # Encoder
-        self.input_fc = nn.Sequential(reshapeTo3D(grid_size),
-                                      nn.Conv3d(1, in_ch, 3, 1, 1))
+        self.input_fc = nn.Sequential(reshapeModule(grid_size),
+                                      conv(1, in_ch, 3, 1, 1))
         fc1 = []
         # First res
-        fc1.extend([ResnetBlock(in_ch) for _ in range(layer_n // 2)])
-        fc1.append(Downsample(in_ch, True))
-        fc1.append(ResnetBlock(in_ch, in_ch * 2))
-        fc1.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2 - 1)])
+        fc1.extend([resnet_block(in_ch) for _ in range(layer_n)])
+        fc1.append(downsample1(in_ch))
+        fc1.append(resnet_block(in_ch, in_ch * 2))
+        fc1.extend([resnet_block(in_ch * 2) for _ in range(layer_n)])
+        fc1.append(downsample2(in_ch * 2))
+        fc1.append(resnet_block(in_ch * 2, in_ch * 4))
+        fc1.extend([resnet_block(in_ch * 4) for _ in range(layer_n)])
         self.fc1 = nn.Sequential(*fc1)
 
         # Decoder
         fc4 = []
-        fc4.extend([ResnetBlock(in_ch * 2) for _ in range(layer_n // 2)])
-        fc4.append(Upsample(in_ch * 2, True))
-        fc4.append(ResnetBlock(in_ch * 2, in_ch))
-        fc4.extend([ResnetBlock(in_ch, in_ch) for _ in range(layer_n // 2 - 1)])
+        fc4.extend([resnet_block(in_ch * 4) for _ in range(layer_n)])
+        fc4.append(upsample2(in_ch * 4))
+        fc4.append(resnet_block(in_ch * 4, in_ch * 2))
+        fc4.extend([resnet_block(in_ch * 2, in_ch * 2) for _ in range(layer_n)])
+        fc4.append(upsample1(in_ch * 2))
+        fc4.append(resnet_block(in_ch * 2, in_ch))
+        fc4.extend([resnet_block(in_ch) for _ in range(layer_n)])
         self.fc4 = nn.Sequential(*fc4)
 
-        self.output_fc = nn.Sequential(nn.Conv3d(in_ch, 1, 3, 1, 1),
+        self.output_fc = nn.Sequential(conv(in_ch, 1, 3, 1, 1),
                                        nn.Sigmoid())
 
         # Quantizer
@@ -122,13 +164,15 @@ class VAE(nn.Module):
                                             remap=None,
                                             sane_index_shape=False,
                                             legacy=False)
-            self.quant_conv = nn.Conv3d(in_ch * 2, embed_dim, 1, 1, 0)
-            self.post_quant_conv = nn.Conv3d(embed_dim, in_ch * 2, 1, 1, 0)
+            self.quant_conv = conv(in_ch * 4, embed_dim, 1, 1, 0)
+            self.post_quant_conv = conv(embed_dim, in_ch * 4, 1, 1, 0)
         elif quant_version == "v1":
-            self.quantize = VectorQuantize(dim = in_ch * 2,
+            self.quantize = VectorQuantize(dim = in_ch * 4,
                                            codebook_size = self.code_n,
                                            codebook_dim=embed_dim,
-                                           use_cosine_sim=True)
+                                           use_cosine_sim=True,
+                                           separate_codebook_per_head = True,
+                                           heads=quant_heads)
 
     def get_code_book_n(self):
         return self.code_n
@@ -141,7 +185,10 @@ class VAE(nn.Module):
             quant, q_loss, info = self.quantize(h)
             indices = info[2]
         elif self.quant_version == "v1":
-            z = rearrange(h, 'b c h w d -> b (h w d) c').contiguous()
+            if self.level_num == 2:
+                z = rearrange(h, 'b c h w d -> b (h w d) c').contiguous()
+            else:
+                z = rearrange(h, 'b c d -> b d c').contiguous()
             quant, indices, q_loss = self.quantize(z)
             quant = quant.permute(0, 2, 1).view(h.shape).contiguous()
         return quant, q_loss, indices
@@ -162,7 +209,10 @@ class VAE(nn.Module):
             quant = self.quantize.get_codebook_entry(c, None)
         elif self.quant_version == "v1":
             quant = self.quantize.get_output_from_indices(c)
-        quant = quant.reshape(B * L, 3, 3, 3, -1).permute(0, 4, 1, 2, 3).contiguous()
+        if self.level_num == 2:
+            quant = quant.reshape(B * L, self.m_, self.m_, self.m_, -1).permute(0, 4, 1, 2, 3).contiguous()
+        else:
+            quant = quant.permute(0, 2, 1).contiguous()
         out = self.decode(quant)
         out = out.reshape(B, L, -1)
         return out
@@ -185,12 +235,11 @@ class VAE(nn.Module):
         return out, q_loss, info
 
 # Loss function
-def loss_function(recon_x, x, mean, logvar, kl_weight=1e-6):
+def loss_function(recon_x, x, q_loss):
     b = x.size(0) * x.size(1)
     recon_loss = F.l1_loss(recon_x, x, reduction="sum") / b
     # KL divergence
-    KLD = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / b
-    return recon_loss + KLD * kl_weight
+    return recon_loss + q_loss.mean(), recon_loss
 
 class OnlineVariance(object):
     def __init__(self, num_features):
@@ -221,15 +270,19 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    vae = VAE(4, 64, 2, 7)
-    input_data = torch.randn(1, 4, 343)
-    output_data, mean, logvar = vae(input_data)
-    loss = loss_function(input_data, output_data, mean, logvar)
+    vae = VAE(2, 32, 2, 10,
+              quant_code_n=512,
+              quant_heads=2,
+              quant_version="v1",
+              level_num=1)
+    input_data = torch.randn(1, 4, 112)
+    output_data, q_loss, _= vae(input_data)
+    loss, _ = loss_function(input_data, output_data, q_loss)
     loss.sum().backward() 
     print(loss)
     for name, param in vae.named_parameters():
         if param.grad is None:
             print(f"Parameter {name} did not receive gradients.")
 
-    encoded = vae.encode_and_reparam(input_data)
-    print(encoded.shape)
+    codes = vae.get_normalized_indices(input_data)
+    print(codes.shape)

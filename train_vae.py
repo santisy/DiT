@@ -86,23 +86,21 @@ def create_logger(logging_dir):
     return logger
 
 
-def random_sample_and_reshape(x, l, m, zero_ratio=None):
+def random_sample_and_reshape(x, l, m, level_num=2, zero_ratio=None):
+    if level_num == 2:
+        x = x[:, :, :m**3]
+    else:
+        x = x[:, :, m**3:]
+    B, L, C = x.shape
+    x = x.reshape(B, L // 8, C * 8)
+
     out = []
     for i in range(x.size(0)):
-        if zero_ratio is None:
-            indices = torch.randperm(x.size(1))[:l]
-            out.append(x[i, indices, :])
-        else:
-            assert zero_ratio < 1.0
-            zero_num = int(l * zero_ratio)
-            non_zero_num = l - zero_num
-            zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) == 4.0)[0]
-            non_zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) != 4.0)[0]
-            out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
-            out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
+        indices = torch.randperm(x.size(1))[:l]
+        out.append(x[i, indices, :])
 
     out = torch.cat(out, dim=0).unsqueeze(dim=0)
-    return out[:, :, :m ** 3].clone()
+    return out.contiguous().clone()
     
 #################################################################################
 #                                  Training Loop                                #
@@ -163,27 +161,22 @@ def main(args):
     # Temp variables
     model_list = nn.ModuleList()
     ema_list = nn.ModuleList()
-    linear_flag = config.vae.linear
+    level_num = args.level_num
+    m = None
 
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
-        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        if not linear_flag:
-            print("\033[92mUse conv VAE.\033[00m")
-            model = VAE(config.vae.layer_n,
-                        config.vae.in_ch,
-                        config.vae.latent_ch,
-                        m,
-                        quant_code_n=config.vae.get("quant_code_n", 2048),
-                        quant_version=config.vae.get("quant_version", "v0"))
-        else:
-            in_ch = int(m ** 3)
-            latent_dim = in_ch // config.vae.latent_ratio
-            print("\033[92mUse linear VAE.\033[00m")
-            model = VAELinear(config.vae.layer_n,
-                              in_ch,
-                              in_ch * 16,
-                              latent_dim)
+        m = int(math.floor(math.pow(in_ch, 1 / 3.0))) * 2
+
+        model = VAE(config.vae.layer_n,
+                    config.vae.in_ch,
+                    config.vae.latent_ch,
+                    m,
+                    quant_code_n=config.vae.get("quant_code_n", 2048),
+                    quant_version=config.vae.get("quant_version", "v0"),
+                    quant_heads=config.vae.get("quant_heads", 1),
+                    downsample_n=config.vae.get("downsample_n", 1),
+                    level_num=level_num)
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -238,10 +231,10 @@ def main(args):
             #x0 = random_sample_and_reshape(x0.to(device), 64)
             #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
-            if not linear_flag:
-                x2 = random_sample_and_reshape(x2.to(device), 512, m, zero_ratio=0.1)
-            else:
-                x2 = random_sample_and_reshape(x2.to(device), 1024, m, zero_ratio=0.1)
+            x2 = random_sample_and_reshape(x2.to(device), 128, m,
+                                           level_num=level_num,
+                                           zero_ratio=0.1)
+
             x_list = [x2,]
 
             loss = 0
@@ -296,9 +289,14 @@ def main(args):
                     for i in range(len(val_dataset)):
                         _, _, x2, _, _, _, _ = val_dataset[i]
                         x2 = x2.unsqueeze(dim=0).to(device)
-                        x2 = x2[:, :, :m ** 3]
+                        if level_num == 2:
+                            x2 = x2[:, :, :m**3]
+                        else:
+                            x2 = x2[:, :, m**3:]
+                        B, L, C = x2.shape
+                        x2 = x2.reshape(B, L // 8, C * 8).contiguous
                         with torch.no_grad():
-                            x2_rec, _, _ = ema_list[0](x2)
+                            x2_rec, _, _ = model_list[0](x2)
                             val_loss += (x2_rec - x2).abs().mean()
                     val_loss = val_loss / len(val_dataset)
                     val_record.write(f"Step {train_steps}:\t{val_loss.cpu().item():.4f}\n")
@@ -337,6 +335,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp-id", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
+    parser.add_argument("--level-num", type=int, default=0)
 
     args = parser.parse_args()
     main(args)
