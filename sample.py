@@ -154,7 +154,7 @@ def main(args):
                             ch,
                             generator=generator,
                             device=device)
-            a = [torch.zeros((z.shape[0],), dtype=torch.int64, device=device) for _ in range(l)]
+            a = [torch.ones((z.shape[0],) * (diffusion.num_timesteps // 10), dtype=torch.int64, device=device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
