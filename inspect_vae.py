@@ -96,10 +96,11 @@ def main(args):
                 #x1_rec, _, _ = vae_model_list[0](x1)
                 x2_other = x2[:, :, m**3:]
                 x2 = x2[:, :, :m ** 3]
-                with autocast():
-                    indices = vae_model_list[0].get_normalized_indices(x2)
-                indices = indices.float()
-                x2_rec = vae_model_list[0].decode_code(indices)
+                with torch.no_grad():
+                    with autocast():
+                        indices = vae_model_list[0].get_normalized_indices(x2)
+                    indices = indices.float()
+                    x2_rec = vae_model_list[0].decode_code(indices)
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
                 loss2 = (x2 - x2_rec).abs() / (x2.size(1) * x2.size(0))

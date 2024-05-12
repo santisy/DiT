@@ -161,7 +161,7 @@ class VAE(nn.Module):
         if self.quant_version == "v0":
             quant = self.quantize.get_codebook_entry(c, None)
         elif self.quant_version == "v1":
-            quant = self.quantize.get_codes_from_indices(c)
+            quant = self.quantize.get_output_from_indices(c)
         quant = quant.reshape(B * L, 3, 3, 3, -1).permute(0, 4, 1, 2, 3).contiguous()
         out = self.decode(quant)
         out = out.reshape(B, L, -1)
