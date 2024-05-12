@@ -85,14 +85,18 @@ def main(args):
             in_ch = int(m_ ** 3)
             in_ch_list.append(in_ch)
             num_heads = num_heads * 2
+            cross_layers = config.model.cross_layers
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
             in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
             in_ch_list.append(in_ch)
             num_heads = num_heads * 2
+            cross_layers = config.model.cross_layers
         elif l == 0: # Root positions and scales
+            depth = 16
             in_ch = 4
             in_ch_list.append(in_ch)
+            cross_layers = [4, 8, 12]
 
         # Create DiT model
         model = DiT(
@@ -106,7 +110,7 @@ def main(args):
             mlp_ratio=config.model.mlp_ratio,
             depth=depth,
             num_heads=num_heads,
-            cross_layers=config.model.cross_layers if l == 2 else [],
+            cross_layers=cross_layers,
             learn_sigma=config.diffusion.get("learn_sigma", True),
             # Other flags
             add_inject=config.model.add_inject,
