@@ -211,13 +211,11 @@ class DiTBlock(nn.Module):
                     self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
                                                           nn.Linear(hidden_size, 5 * hidden_size, bias=True)))
             else:
-                self.layer_list_add_inject = nn.ModuleList()
                 self.adaLN_modulation_mca_list = nn.ModuleList()
                 self.norm0_list = nn.ModuleList()
                 self.mlp_list = nn.ModuleList()
                 for _ in range(cond_num):
                     self.norm0_list.append(nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6))
-                    self.layer_list_add_inject.append(nn.Linear(hidden_size, hidden_size))
                     self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
                                                           nn.Linear(hidden_size, 3 * hidden_size, bias=True)))
                     self.mlp_list.append(nn.Linear(hidden_size, hidden_size))
@@ -238,15 +236,13 @@ class DiTBlock(nn.Module):
                     x = x + gate_mca.unsqueeze(1) * cross(modulate(norm0(x), shift_mca, scale_mca),
                                                           modulate(norm00(x0_), shift_mca0, scale_mca0))
             else:
-                for layer_add, x0_, a, norm0, adaMM, mlp_ in zip(self.layer_list_add_inject, x0, a_list, self.norm0_list, self.adaLN_modulation_mca_list, self.mlp_list):
-                    x0_ = layer_add(x0_)
+                for mlp_, x0_, a, norm0, adaMM in zip(self.mlp_list, x0, a_list, self.norm0_list, self.adaLN_modulation_mca_list):
                     seq_0 = x0_.size(1)
                     seq_x = x.size(1)
                     if seq_0 == seq_x:
                         add_ = x0_
                     else:
                         add_ = torch.repeat_interleave(x0_, seq_x // seq_0, dim=1)
-                    x = x + add_
                     gate_mca, shift_mca, scale_mca = adaMM(a).chunk(3, dim=1)
                     x = x + gate_mca.unsqueeze(1) * mlp_(modulate(norm0(add_), shift_mca, scale_mca))
 
