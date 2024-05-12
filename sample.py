@@ -93,10 +93,9 @@ def main(args):
             num_heads = num_heads * 2
             cross_layers = config.model.cross_layers
         elif l == 0: # Root positions and scales
-            depth = 16
             in_ch = 4
             in_ch_list.append(in_ch)
-            cross_layers = [4, 8, 12]
+            cross_layers = []
 
         # Create DiT model
         model = DiT(
