@@ -154,7 +154,7 @@ def main(args):
                             ch,
                             generator=generator,
                             device=device)
-            a = [torch.ones((z.shape[0],) * (diffusion.num_timesteps // 10), dtype=torch.int64, device=device) for _ in range(l)]
+            a = [torch.ones((z.shape[0],) , dtype=torch.int64, device=device) * (diffusion.num_timesteps // 10) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
@@ -213,7 +213,6 @@ if __name__ == "__main__":
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
     parser.add_argument("--vae-ckpt", type=str, required=True)
-    parser.add_argument("--vae-std", type=str, required=True)
     parser.add_argument("--l0_seed", type=int, default=None,
                         help="Given and fixed l0 random seed.")
     args = parser.parse_args()
