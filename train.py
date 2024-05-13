@@ -164,25 +164,19 @@ def main(args):
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
     # Prepare VAE model
-    if level_num == 2:
+    if level_num in [1, 2]:
         vae_model_list = nn.ModuleList()
-        vae_ckpt = torch.load(args.vae_ckpt, map_location=map_fn)
-        linear_flag = config.vae.linear
         for l in range(2, 3):
-            if not linear_flag:
-                vae_model = VAE(config.vae.layer_n,
-                                config.vae.in_ch,
-                                config.vae.latent_ch,
-                                m,
-                                quant_code_n=config.vae.get("quant_code_n", 2048),
-                                quant_version=config.vae.get("quant_version", "v0"))
-            else:
-                in_ch = int(m ** 3)
-                latent_dim = in_ch // config.vae.latent_ratio
-                vae_model = VAELinear(config.vae.layer_n,
-                                in_ch,
-                                in_ch * 16,
-                                latent_dim)
+            vae_ckpt = torch.load(args.vae_ckpt[l - 2], map_location=map_fn)
+            vae_model = VAE(config.vae.layer_n,
+                            config.vae.in_ch,
+                            config.vae.latent_ch,
+                            m * 2,
+                            quant_code_n=config.vae.get("quant_code_n", 2048),
+                            quant_version=config.vae.get("quant_version", "v0"),
+                            quant_heads=config.vae.get("quant_heads", 1),
+                            downsample_n=config.vae.get("downsample_n", 1),
+                            level_num=level_num)
 
             # Load the trained model
             vae_model.load_state_dict(vae_ckpt["model"][l - 2])
@@ -199,12 +193,10 @@ def main(args):
 
     if level_num == 2:
         in_ch = dataset.get_level_vec_len(2)
-        in_ch = int(math.ceil(m / 2) ** 3)
-        num_heads = num_heads * 2
+        in_ch = int(math.ceil(m / 2) ** 3) * 2
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
-        in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
-        num_heads = num_heads * 2
+        in_ch = int(dataset.get_level_vec_len(2) - m ** 3) * 8 // 4
     elif level_num == 0: # Root positions and scales
         in_ch = 4
 
@@ -415,7 +407,7 @@ if __name__ == "__main__":
     parser.add_argument("--resume", type=str, default=None)
 
     # VAE related
-    parser.add_argument("--vae-ckpt", type=str, required=True)
+    parser.add_argument("--vae-ckpt", nargs="+", help="VAE checkpoints")
 
     args = parser.parse_args()
     main(args)
