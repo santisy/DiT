@@ -97,9 +97,9 @@ def random_sample_and_reshape(x, l, m, level_num=2, zero_ratio=None):
     out = []
     for i in range(x.size(0)):
         indices = torch.randperm(x.size(1))[:l]
-        out.append(x[i, indices, :])
+        out.append(x[i, indices, :].unsqueeze(dim=0))
 
-    out = torch.cat(out, dim=0).unsqueeze(dim=0)
+    out = torch.cat(out, dim=0)
     return out.contiguous().clone()
     
 #################################################################################
@@ -228,8 +228,6 @@ def main(args):
         for _, _, x2, _, _, _, _ in loader:
 
             # To device
-            #x0 = random_sample_and_reshape(x0.to(device), 64)
-            #x1 = random_sample_and_reshape(x1.to(device), 256)
             # Do not sample too much zero entries when training VAE
             x2 = random_sample_and_reshape(x2.to(device), 128, m,
                                            level_num=level_num,
