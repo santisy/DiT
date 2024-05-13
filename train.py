@@ -216,7 +216,7 @@ def main(args):
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
-        aligned_gen=True if level_num != 0 else False,
+        aligned_gen=False,
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num
     ).to(device)
@@ -286,7 +286,28 @@ def main(args):
             # To device, encode VAE and divide the per-element statistics
             x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
             x1 = x2[:, :, m ** 3:].clone().to(device)
+            B, L, C = x1.shape 
+            x1 = x1.reshape(B, L // 8, C * 8).contiguous()
             x2 = x2[:, :, :m ** 3].clone().to(device)
+            B, L, C = x2.shape
+            x2 = x2.reshape(B, L // 8, C * 8)
+
+            # VAE auto-encoding
+            if level_num >= 1:
+                with torch.no_grad():
+                    x1_list = []
+                    for x1_ in torch.split(x1, 4, dim=0):
+                        with autocast():
+                            x1_list.append(vae_model_list[0].get_normalized_indices(x1_))
+                    x1 = torch.cat(x1_list, dim=0).detach().float()
+            elif level_num >= 2:
+                with torch.no_grad():
+                    x2_list = []
+                    for x2_ in torch.split(x2, 4, dim=0):
+                        with autocast():
+                            x2_list.append(vae_model_list[1].get_normalized_indices(x2_))
+                    x2 = torch.cat(x2_list, dim=0).detach().float()
+
 
             p2 = p2.to(device)
             y = y.to(device)
@@ -297,23 +318,13 @@ def main(args):
                 a = []
                 xc = []
                 positions = []
-            
             if level_num == 1:
                 x = x1
                 xc = [x0,]
                 a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
-                with torch.no_grad():
-                    x2_list = []
-                for x2_ in torch.split(x2, 4, dim=0):
-                    with autocast():
-                        x2_list.append(vae_model_list[0].get_normalized_indices(x2_))
-                    x2 = torch.cat(x2_list, dim=0).detach().float()
                 x = x2
-                B, L, C = x1.shape
-                x1 = x1.reshape(B, L // 8, 8, C)
-                x1 = x1.reshape(B, L // 8, 8 * C).contiguous()
                 xc = [x0, x1]
                 a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),
                      torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device)
