@@ -21,6 +21,7 @@ import numpy as np
 from tqdm import tqdm
 import math
 
+from einops import rearrange
 from vae_model import VAE, VAELinear, OnlineVariance
 import argparse
 from data.ofalg_dataset import OFLAGDataset
@@ -49,31 +50,25 @@ def main(args):
 
     # Prepare VAE model
     vae_model_list = nn.ModuleList()
-    online_variance_list = []
-    vae_ckpt = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
-    linear_flag = config.vae.linear
-    for l in range(2, 3):
-        in_ch = dataset.get_level_vec_len(l)
-        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        if not linear_flag:
-            latent_dim = int(math.ceil(m / 2) ** 3 * config.vae.latent_ch)
-            vae_model = VAE(config.vae.layer_n,
+    m = None
+    in_ch = dataset.get_level_vec_len(2)
+    m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+
+    for l in range(1, 3):
+        vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
-                        m,
+                        m * 2,
                         quant_code_n=config.vae.get("quant_code_n", 2048),
-                        quant_version=config.vae.get("quant_version", "v0"))
-        else:
-            in_ch = int(m ** 3)
-            latent_dim = in_ch // config.vae.latent_ratio
-            vae_model = VAELinear(config.vae.layer_n,
-                              in_ch,
-                              in_ch * 16,
-                              latent_dim)
-        vae_model.load_state_dict(vae_ckpt["model"][l - 2])
+                        quant_version=config.vae.get("quant_version", "v0"),
+                        quant_heads=config.vae.get("quant_heads", 1),
+                        downsample_n=config.vae.get("downsample_n", 1),
+                        level_num=l)
+
+        vae_ckpt = torch.load(args.ckpt[l - 1], map_location=lambda storage, loc: storage)
+        vae_model.load_state_dict(vae_ckpt["model"])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
-        online_variance_list.append(OnlineVariance(latent_dim))
     vae_model_list.eval()
 
     loader = DataLoader(dataset, batch_size=args.batch_size,
@@ -92,15 +87,30 @@ def main(args):
         x2 = x2.to(device)
         with torch.no_grad():
             if args.inspect_recon:
-                #x0_rec, _, _ = vae_model_list[0](x0)
-                #x1_rec, _, _ = vae_model_list[0](x1)
+                # Reshape x2_other
                 x2_other = x2[:, :, m**3:]
+                B, L, C = x2_other.shape
+                x2_other = x2_other.reshape(B, L // 8, C * 8).contiguous().clone()
+
+                # Reshape x2
                 x2 = x2[:, :, :m ** 3]
+                B, L, C = x2.shape
+                x2 = rearrange(x2, 'b (l n1 n2 n3) (x y z) -> b l (n1 x) (n2 y) (n3 z)',
+                        n1=2, n2=2, n3=2, x=5, y=5, z=5)
+                x2 = x2.reshape(B, L // 8, -1).contiguous().clone()
+
                 with torch.no_grad():
                     with autocast():
-                        indices = vae_model_list[0].get_normalized_indices(x2)
+                        indices = vae_model_list[0].get_normalized_indices(x2_other)
                     indices = indices.float()
-                    x2_rec = vae_model_list[0].decode_code(indices)
+                    x2_other_rec = vae_model_list[0].decode_code(indices)
+                    
+
+                    with autocast():
+                        indices = vae_model_list[1].get_normalized_indices(x2)
+                    indices = indices.float()
+                    x2_rec = vae_model_list[1].decode_code(indices)
+
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 #loss1 = (x1 - x1_rec).abs() / x1.size(1)
                 loss2 = (x2 - x2_rec).abs() / (x2.size(1) * x2.size(0))
@@ -116,7 +126,7 @@ def main(args):
                 x0_out[:, :, -3:] = x0[:, :, -3:]
                 x0 = x0_out.clone()
                 #x0 = dataset.denormalize(x0_out.clone(), 0).detach().cpu()
-                x2 = torch.cat([x2_rec, x2_other], dim=-1).clone()
+                x2 = torch.cat([x2_rec, x2_other_rec], dim=-1).clone()
                 x1 = torch.zeros_like(x1)
                 x0 = dataset.denormalize(x0[0], 0).detach().cpu()
                 x1 = dataset.denormalize(x1[0], 1).detach().cpu()
@@ -130,17 +140,11 @@ def main(args):
                     latent_2 = vae_model_list[0].encode_and_reparam(x2)
                 B, L, _ = latent_2.shape
                 latent_2 = latent_2.reshape(B * L, -1)
-                online_variance_list[0].update(latent_2.detach().cpu())
-
-    if not args.inspect_recon:
-        # Dump the statistics
-        np.savez(npy_out, std2=online_variance_list[0].std)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--ckpt", type=str, required=True)
+    parser.add_argument("--ckpt", nargs='+', required=True)
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--export-out", type=str, required=True)

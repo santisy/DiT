@@ -168,28 +168,26 @@ def main(args):
     ema_list = nn.ModuleList()
     level_num = args.level_num
     m = None
+    in_ch = dataset.get_level_vec_len(2)
+    m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
-    for l in range(2, 3):
-        in_ch = dataset.get_level_vec_len(l)
-        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+    model = VAE(config.vae.layer_n,
+                config.vae.in_ch,
+                config.vae.latent_ch,
+                m * 2,
+                quant_code_n=config.vae.get("quant_code_n", 2048),
+                quant_version=config.vae.get("quant_version", "v0"),
+                quant_heads=config.vae.get("quant_heads", 1),
+                downsample_n=config.vae.get("downsample_n", 1),
+                level_num=level_num)
+    
+    ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
+    requires_grad(ema, False)
+    ema_list.append(ema)
 
-        model = VAE(config.vae.layer_n,
-                    config.vae.in_ch,
-                    config.vae.latent_ch,
-                    m * 2,
-                    quant_code_n=config.vae.get("quant_code_n", 2048),
-                    quant_version=config.vae.get("quant_version", "v0"),
-                    quant_heads=config.vae.get("quant_heads", 1),
-                    downsample_n=config.vae.get("downsample_n", 1),
-                    level_num=level_num)
-        
-        ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
-        requires_grad(ema, False)
-        ema_list.append(ema)
-
-        # Put DDP on this
-        model = DDP(model.to(device), device_ids=[rank])
-        model_list.append(model)
+    # Put DDP on this
+    model = DDP(model.to(device), device_ids=[rank])
+    model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model_list.parameters(), lr=0.0002)

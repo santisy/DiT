@@ -166,8 +166,8 @@ def main(args):
     # Prepare VAE model
     if level_num in [1, 2]:
         vae_model_list = nn.ModuleList()
-        for l in range(2, 3):
-            vae_ckpt = torch.load(args.vae_ckpt[l - 2], map_location=map_fn)
+        for l in range(1, 3):
+            vae_ckpt = torch.load(args.vae_ckpt[l - 1], map_location=map_fn)
             vae_model = VAE(config.vae.layer_n,
                             config.vae.in_ch,
                             config.vae.latent_ch,
@@ -179,7 +179,7 @@ def main(args):
                             level_num=level_num)
 
             # Load the trained model
-            vae_model.load_state_dict(vae_ckpt["model"][l - 2])
+            vae_model.load_state_dict(vae_ckpt["model"])
             vae_model = vae_model.to(device)
             vae_model_list.append(vae_model)
         vae_model_list.eval()
