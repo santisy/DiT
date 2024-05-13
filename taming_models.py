@@ -68,7 +68,10 @@ class VectorQuantizer2(nn.Module):
         assert rescale_logits==False, "Only for interface compatible with Gumbel"
         assert return_logits==False, "Only for interface compatible with Gumbel"
         # reshape z -> (batch, height, width, channel) and flatten
-        z = rearrange(z, 'b c h w d -> b h w d c').contiguous()
+        if z.ndim == 5: 
+            z = rearrange(z, 'b c h w d -> b h w d c').contiguous()
+        elif z.ndim == 3:
+            z = rearrange(z, 'b c d -> b d c').contiguous()
         z_flattened = z.view(-1, self.e_dim)
         # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
 
@@ -94,8 +97,10 @@ class VectorQuantizer2(nn.Module):
         z_q = z + (z_q - z).detach()
 
         # reshape back to match original input shape
-        z_q = rearrange(z_q, 'b h w d c -> b c h w d').contiguous()
-
+        if z.ndim == 5:
+            z_q = rearrange(z_q, 'b h w d c -> b c h w d').contiguous()
+        elif z.ndim == 3:
+            z_q = rearrange(z_q, 'b d c -> b c d').contiguous()
         if self.remap is not None:
             min_encoding_indices = min_encoding_indices.reshape(z.shape[0],-1) # add batch axis
             min_encoding_indices = self.remap_to_used(min_encoding_indices)

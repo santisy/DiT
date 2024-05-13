@@ -20,10 +20,10 @@ diffusion:
 vae:
     layer_n: 2
     in_ch: 64
-    latent_ch: 32
+    latent_ch: 128
     latent_ratio: 4
-    quant_version: "v1"
-    quant_code_n: 2048
+    quant_version: "v0"
+    quant_code_n: 1024
     quant_heads: 2
     downsample_n: 2
     linear: false

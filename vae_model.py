@@ -110,6 +110,7 @@ class VAE(nn.Module):
         self.g = grid_size
         self.m_ = math.ceil(grid_size / (2 ** downsample_n))
         self.quant_version = quant_version
+        self.quant_heads = quant_heads
         self.downsample_n = downsample_n
         self.level_num = level_num
 
@@ -121,7 +122,6 @@ class VAE(nn.Module):
             upsample1 = partial(Upsample, with_conv=True)
             upsample2 = partial(Upsample2, with_conv=True)
         else:
-            quant_heads = 1
             conv = nn.Conv1d
             reshapeModule = reshapeTo1D
             downsample1 = downsample2 = partial(Downsample3, with_conv=True)
@@ -160,12 +160,14 @@ class VAE(nn.Module):
         # Quantizer
         print(f"\033[92m Use quant version {quant_version}.\033[00m")
         if quant_version == "v0":
-            self.quantize = VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
-                                            remap=None,
-                                            sane_index_shape=False,
-                                            legacy=False)
-            self.quant_conv = conv(in_ch * 4, embed_dim, 1, 1, 0)
-            self.post_quant_conv = conv(embed_dim, in_ch * 4, 1, 1, 0)
+            self.quantize = nn.ModuleList()
+            for _ in range(quant_heads):
+                self.quantize.append(VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
+                                                      remap=None,
+                                                      sane_index_shape=False,
+                                                      legacy=False))
+            self.quant_conv = conv(in_ch * 4 // quant_heads, embed_dim, 1, 1, 0)
+            self.post_quant_conv = conv(embed_dim * quant_heads, in_ch * 4, 1, 1, 0)
         elif quant_version == "v1":
             self.quantize = VectorQuantize(dim = in_ch * 4,
                                            codebook_size = self.code_n,
@@ -181,9 +183,17 @@ class VAE(nn.Module):
         h = self.input_fc(x)
         h = self.fc1(h)
         if self.quant_version == "v0":
-            h = self.quant_conv(h)
-            quant, q_loss, info = self.quantize(h)
-            indices = info[2]
+            indices_list = []
+            quant_list = []
+            q_loss = 0
+            for q, h_ in zip(self.quantize, torch.chunk(h, self.quant_heads, dim=1)):
+                h_ = self.quant_conv(h_)
+                quant_, q_loss_, info = q(h_)
+                q_loss += q_loss_
+                indices_list.append(info[2])
+                quant_list.append(quant_)
+            indices = torch.cat(indices_list, dim=0)
+            quant = torch.cat(quant_list, dim=1)
         elif self.quant_version == "v1":
             if self.level_num == 2:
                 z = rearrange(h, 'b c h w d -> b (h w d) c').contiguous()
@@ -270,12 +280,12 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    vae = VAE(2, 32, 2, 10,
+    vae = VAE(2, 32, 128, 10,
               quant_code_n=512,
-              quant_heads=2,
-              quant_version="v1",
+              quant_heads=1,
+              quant_version="v0",
               level_num=1)
-    input_data = torch.randn(1, 4, 112)
+    input_data = torch.randn(1, 4, 128)
     output_data, q_loss, _= vae(input_data)
     loss, _ = loss_function(input_data, output_data, q_loss)
     loss.sum().backward() 
