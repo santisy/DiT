@@ -293,9 +293,9 @@ def main(args):
                         x2 = x2.unsqueeze(dim=0).to(device)
                         if level_num == 2:
                             x2 = x2[:, :, :m**3]
+                            B, L, C = x2.shape
                             x2 = rearrange(x2, 'b (l n1 n2 n3) (x y z) -> b l (n1 x) (n2 y) (n3 z)',
                                     n1=2, n2=2, n3=2, x=5, y=5, z=5)
-                            B, L, C = x2.shape
                             x2 = x2.reshape(B, L // 8, -1).contiguous().clone()
                         else:
                             x2 = x2[:, :, m**3:]
