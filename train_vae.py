@@ -28,6 +28,7 @@ import logging
 import os
 import shutil
 import json
+from einops import rearrange
 
 from vae_model import VAE, VAELinear, loss_function
 
@@ -89,10 +90,14 @@ def create_logger(logging_dir):
 def random_sample_and_reshape(x, l, m, level_num=2, zero_ratio=None):
     if level_num == 2:
         x = x[:, :, :m**3]
+        B, L, C = x.shape
+        x = rearrange(x, 'b (l n1 n2 n3) (x y z) -> b l (n1 x) (n2 y) (n3 z)',
+                n1=2, n2=2, n3=2, x=5, y=5, z=5)
+        x = x.reshape(B, L // 8, -1).contiguous()
     else:
         x = x[:, :, m**3:]
-    B, L, C = x.shape
-    x = x.reshape(B, L // 8, C * 8)
+        B, L, C = x.shape
+        x = x.reshape(B, L // 8, C * 8)
 
     out = []
     for i in range(x.size(0)):
@@ -229,7 +234,8 @@ def main(args):
 
             # To device
             # Do not sample too much zero entries when training VAE
-            x2 = random_sample_and_reshape(x2.to(device), 128, m,
+            sample_num = 256 if level_num == 1 else 128
+            x2 = random_sample_and_reshape(x2.to(device), sample_num, m,
                                            level_num=level_num,
                                            zero_ratio=0.1)
 
