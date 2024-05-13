@@ -293,12 +293,16 @@ def main(args):
                         x2 = x2.unsqueeze(dim=0).to(device)
                         if level_num == 2:
                             x2 = x2[:, :, :m**3]
+                            x2 = rearrange(x2, 'b (l n1 n2 n3) (x y z) -> b l (n1 x) (n2 y) (n3 z)',
+                                    n1=2, n2=2, n3=2, x=5, y=5, z=5)
+                            B, L, C = x2.shape
+                            x2 = x2.reshape(B, L // 8, -1).contiguous().clone()
                         else:
                             x2 = x2[:, :, m**3:]
-                        B, L, C = x2.shape
-                        x2 = x2.reshape(B, L // 8, C * 8).contiguous
+                            B, L, C = x2.shape
+                            x2 = x2.reshape(B, L // 8, C * 8).contiguous().clone()
                         with torch.no_grad():
-                            x2_rec, _, _ = model_list[0](x2)
+                            x2_rec, _, _ = ema_list[0](x2)
                             val_loss += (x2_rec - x2).abs().mean()
                     val_loss = val_loss / len(val_dataset)
                     val_record.write(f"Step {train_steps}:\t{val_loss.cpu().item():.4f}\n")
