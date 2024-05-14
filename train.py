@@ -30,7 +30,6 @@ import shutil
 import json
 
 from models import DiT
-from vae_model import VAE, VAELinear
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
 from torch.cuda.amp import autocast
@@ -163,34 +162,6 @@ def main(args):
     in_ch = dataset.get_level_vec_len(2)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
-    # Prepare VAE model
-    if level_num == 2:
-        vae_model_list = nn.ModuleList()
-        vae_ckpt = torch.load(args.vae_ckpt, map_location=map_fn)
-        linear_flag = config.vae.linear
-        for l in range(2, 3):
-            if not linear_flag:
-                vae_model = VAE(config.vae.layer_n,
-                                config.vae.in_ch,
-                                config.vae.latent_ch,
-                                m,
-                                quant_code_n=config.vae.get("quant_code_n", 2048),
-                                quant_version=config.vae.get("quant_version", "v0"))
-            else:
-                in_ch = int(m ** 3)
-                latent_dim = in_ch // config.vae.latent_ratio
-                vae_model = VAELinear(config.vae.layer_n,
-                                in_ch,
-                                in_ch * 16,
-                                latent_dim)
-
-            # Load the trained model
-            vae_model.load_state_dict(vae_ckpt["model"][l - 2])
-            vae_model = vae_model.to(device)
-            vae_model_list.append(vae_model)
-        vae_model_list.eval()
-        logger.info("VAE model created and loaded.")
-
     # Arch variables
     num_heads = config.model.num_heads
     depth = config.model.depth
@@ -244,9 +215,6 @@ def main(args):
     model = DDP(model, device_ids=[rank])
     logger.info(f"Diffusion model created.")
 
-    #vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
-    #logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
-
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
     if resume_ckpt is not None:
@@ -291,7 +259,6 @@ def main(args):
         logger.info(f"Beginning epoch {epoch}...")
         for x0, _, x2, p0, _, p2, y in loader:
 
-            # To device, encode VAE and divide the per-element statistics
             x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
             x1 = x2[:, :, m ** 3:].clone().to(device)
             x2 = x2[:, :, :m ** 3].clone().to(device)
@@ -312,12 +279,6 @@ def main(args):
                 a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
-                with torch.no_grad():
-                    x2_list = []
-                    for x2_ in torch.split(x2, 4, dim=0):
-                        with autocast():
-                            x2_list.append(vae_model_list[0].get_normalized_indices(x2_))
-                x2 = torch.cat(x2_list, dim=0).detach().float()
                 x = x2
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // 8, 8, C)
@@ -413,9 +374,6 @@ if __name__ == "__main__":
     parser.add_argument("--level-num", type=int, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
     parser.add_argument("--resume", type=str, default=None)
-
-    # VAE related
-    parser.add_argument("--vae-ckpt", type=str, required=True)
 
     args = parser.parse_args()
     main(args)

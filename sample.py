@@ -19,7 +19,6 @@ from easydict import EasyDict as edict
 from models import DiT
 import numpy as np
 
-from vae_model import VAE, VAELinear
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
@@ -43,33 +42,8 @@ def main(args):
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # VAE model and stats loading
-    vae_model_list = nn.ModuleList()
-    vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
-
-    linear_flag = config.vae.linear
-    m = None
-    for l in range(2, 3):
-        in_ch = dataset.get_level_vec_len(l)
-        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        if not linear_flag:
-            vae_model = VAE(config.vae.layer_n,
-                        config.vae.in_ch,
-                        config.vae.latent_ch,
-                        m,
-                        quant_code_n=config.vae.get("quant_code_n", 2048),
-                        quant_version=config.vae.get("quant_version", "v0"))
-        else:
-            in_ch = int(m ** 3)
-            latent_dim = in_ch // config.vae.latent_ratio
-            vae_model = VAELinear(config.vae.layer_n,
-                              in_ch,
-                              in_ch * 16,
-                              latent_dim)
-        vae_model.load_state_dict(vae_ckpt["model"][l - 2])
-        vae_model = vae_model.to(device)
-        vae_model_list.append(vae_model)
-    vae_model_list.eval()
+    in_ch = dataset.get_level_vec_len(2)
+    m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
     # Model
     model_list = []
@@ -177,7 +151,6 @@ def main(args):
 
             if l == 2:
                 # Rescale and decode
-                samples = vae_model_list[0].decode_code(samples)
                 B, L, C = xc[-2].shape
                 x2_non_V = xc[-2].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
                 decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
@@ -212,7 +185,6 @@ if __name__ == "__main__":
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
-    parser.add_argument("--vae-ckpt", type=str, required=True)
     parser.add_argument("--l0_seed", type=int, default=None,
                         help="Given and fixed l0 random seed.")
     args = parser.parse_args()
