@@ -31,8 +31,8 @@ def main(args):
     # Prepare name and directory
     out_dir = args.export_out
     os.makedirs(out_dir, exist_ok=True)
-    exp_name = os.path.basename(os.path.dirname(args.ckpt))
-    ckpt_name = os.path.basename(args.ckpt).split(".")[0]
+    exp_name = os.path.basename(os.path.dirname(args.ckpt[0]))
+    ckpt_name = os.path.basename(args.ckpt[0]).split(".")[0]
     dataset_name = os.path.basename(args.data_root)
 
     # Load config
@@ -66,7 +66,7 @@ def main(args):
                         level_num=l)
 
         vae_ckpt = torch.load(args.ckpt[l - 1], map_location=lambda storage, loc: storage)
-        vae_model.load_state_dict(vae_ckpt["model"])
+        vae_model.load_state_dict(vae_ckpt["model"][0])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
@@ -112,10 +112,9 @@ def main(args):
                     x2_rec = vae_model_list[1].decode_code(indices)
 
                 ##loss0 = (x0 - x0_rec).abs().mean()
-                #loss1 = (x1 - x1_rec).abs() / x1.size(1)
+                loss1 = (x2 - x2_other_rec).abs() / (x2_other.size(1) * x2_other_rec)
                 loss2 = (x2 - x2_rec).abs() / (x2.size(1) * x2.size(0))
-                loss_train = loss2.sum()
-                print(loss_train)
+                print(loss2.sum(), loss1.sum())
                 import pdb; pdb.set_trace()
                 #print("Checking")
                 ##x0 = dataset.denormalize(x0_rec[0], 0).detach().cpu()

@@ -179,7 +179,7 @@ def main(args):
                             level_num=level_num)
 
             # Load the trained model
-            vae_model.load_state_dict(vae_ckpt["model"])
+            vae_model.load_state_dict(vae_ckpt["model"][0])
             vae_model = vae_model.to(device)
             vae_model_list.append(vae_model)
         vae_model_list.eval()
