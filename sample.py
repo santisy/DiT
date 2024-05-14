@@ -134,7 +134,7 @@ def main(args):
             generator.manual_seed(seed)
 
             # Shape parameter
-            length = dataset.octree_root_num * 8 if l == 0 else dataset.octree_root_num * 8
+            length = dataset.octree_root_num if l == 0 else dataset.octree_root_num * 8
             ch = in_ch_list[l]
 
             # Random input
