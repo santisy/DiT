@@ -83,6 +83,7 @@ def main(args):
             in_ch = 14 * 4
             in_ch_list.append(in_ch)
         elif l == 0: # Root positions and scales
+            num_heads = 16
             in_ch = 4
             in_ch_list.append(in_ch)
 

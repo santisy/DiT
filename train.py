@@ -199,6 +199,7 @@ def main(args):
         # Length 14: orientation 8 + scales 3 + relative positions 3
         in_ch = int(dataset.get_level_vec_len(2) - m ** 3) * 8 // 4
     elif level_num == 0: # Root positions and scales
+        num_heads = 16
         in_ch = 4
 
     # Create DiT model
