@@ -18,8 +18,9 @@ from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 from models import DiT
 import numpy as np
+from einops import rearrange
 
-from vae_model import VAE, VAELinear
+from vae_model import VAE
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
@@ -156,24 +157,22 @@ def main(args):
 
             # Append the generated latents for the following generation
             samples = samples.clip_(0, 1)
-
-            if l == 1:
-                B, L, C = samples.shape
-                samples = samples.reshape(B, L // 8, 8, C)
-                samples = samples.reshape(B, L // 8, 8 * C).contiguous()
             xc.append(samples.clone())
 
-            if l == 2:
-                # Rescale and decode
-                samples = vae_model_list[0].decode_code(samples)
-                B, L, C = xc[-2].shape
-                x2_non_V = xc[-2].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
-                decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
-            elif l == 0:
+            if l == 0:
                 sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
                 sample_[:, :, -7] = samples[:, :, 0]
                 sample_[:, :, -3:] = samples[:, :, -3:]
                 decoded.append(sample_.clone())
+            else:
+                sample_decoded = vae_model_list[l - 1].decode_code(samples)
+                if l == 1:
+                    sample_decoded = sample_decoded.reshape(batch_size, dataset.octree_root_num * 64, -1)
+                elif l == 2:
+                    sample_decoded = sample_decoded.reshape(batch_size, dataset.octree_root_num * 8, 10, 10, 10)
+                    sample_decoded = rearrange(sample_decoded, 'b l (n1 x) (n2 y) (n3 z) -> b (l n1 n2 n3) (x y z)',
+                                               n1=2, n2=2, n3=2, x=5, y=5, z=5)
+                decoded.append(sample_decoded)
 
             # Get the positions and scales from generated
             scales.append(None)
@@ -186,7 +185,8 @@ def main(args):
                                                   dataset.get_level_vec_len(1)),
                                                   dtype=torch.float32, device=device),
                                     1).detach().cpu()
-            x2 = dataset.denormalize(decoded[1][j], 2).detach().cpu()
+            x2 = torch.cat([decoded[2][j], decoded[1][j]], dim=-1).contiguous().clone()
+            x2 = dataset.denormalize(x2, 2).detach().cpu()
             load_utils.dump_to_bin(os.path.join(out_dir, f"out_{j + i * batch_size:04d}.bin"),
                                    x0, x1, x2, dataset.octree_root_num)
 
