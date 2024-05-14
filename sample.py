@@ -45,28 +45,22 @@ def main(args):
 
     # VAE model and stats loading
     vae_model_list = nn.ModuleList()
-    vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
 
-    linear_flag = config.vae.linear
-    m = None
-    for l in range(2, 3):
-        in_ch = dataset.get_level_vec_len(l)
-        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        if not linear_flag:
-            vae_model = VAE(config.vae.layer_n,
+    in_ch = dataset.get_level_vec_len(2)
+    m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+
+    for l in range(1, 3):
+        vae_ckpt = torch.load(args.vae_ckpt[l - 1], map_location=lambda storage, loc: storage)
+        vae_model = VAE(config.vae.layer_n,
                         config.vae.in_ch,
                         config.vae.latent_ch,
-                        m,
+                        m * 2,
                         quant_code_n=config.vae.get("quant_code_n", 2048),
-                        quant_version=config.vae.get("quant_version", "v0"))
-        else:
-            in_ch = int(m ** 3)
-            latent_dim = in_ch // config.vae.latent_ratio
-            vae_model = VAELinear(config.vae.layer_n,
-                              in_ch,
-                              in_ch * 16,
-                              latent_dim)
-        vae_model.load_state_dict(vae_ckpt["model"][l - 2])
+                        quant_version=config.vae.get("quant_version", "v0"),
+                        quant_heads=config.vae.get("quant_heads", 1),
+                        downsample_n=config.vae.get("downsample_n", 1),
+                        level_num=l)
+        vae_model.load_state_dict(vae_ckpt["model"][0])
         vae_model = vae_model.to(device)
         vae_model_list.append(vae_model)
     vae_model_list.eval()
@@ -80,22 +74,16 @@ def main(args):
         depth = config.model.depth
         hidden_size = config.model.hidden_sizes[l]
         if l == 2:
-            in_ch = dataset.get_level_vec_len(2)
             m_ = math.ceil(m / 2)
-            in_ch = int(m_ ** 3)
+            in_ch = int(m_ ** 3) * 2
             in_ch_list.append(in_ch)
-            num_heads = num_heads * 2
-            cross_layers = config.model.cross_layers
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
-            in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
+            in_ch = 14 * 4
             in_ch_list.append(in_ch)
-            num_heads = num_heads * 2
-            cross_layers = config.model.cross_layers
         elif l == 0: # Root positions and scales
             in_ch = 4
             in_ch_list.append(in_ch)
-            cross_layers = []
 
         # Create DiT model
         model = DiT(
@@ -109,11 +97,11 @@ def main(args):
             mlp_ratio=config.model.mlp_ratio,
             depth=depth,
             num_heads=num_heads,
-            cross_layers=cross_layers,
+            cross_layers=config.model.cross_layers if l != 0 else [],
             learn_sigma=config.diffusion.get("learn_sigma", True),
             # Other flags
             add_inject=config.model.add_inject,
-            aligned_gen=True if l != 0 else False,
+            aligned_gen=False,
             pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
             level_num=l
         )
@@ -145,7 +133,7 @@ def main(args):
             generator.manual_seed(seed)
 
             # Shape parameter
-            length = dataset.octree_root_num * 8 if l == 0 else dataset.octree_root_num * 8 ** 2
+            length = dataset.octree_root_num * 8 if l == 0 else dataset.octree_root_num * 8
             ch = in_ch_list[l]
 
             # Random input
@@ -154,7 +142,7 @@ def main(args):
                             ch,
                             generator=generator,
                             device=device)
-            a = [torch.ones((z.shape[0],) * (diffusion.num_timesteps // 10), dtype=torch.int64, device=device) for _ in range(l)]
+            a = [torch.zeros((z.shape[0],) , dtype=torch.int64, device=device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
@@ -212,8 +200,7 @@ if __name__ == "__main__":
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
-    parser.add_argument("--vae-ckpt", type=str, required=True)
-    parser.add_argument("--vae-std", type=str, required=True)
+    parser.add_argument("--vae-ckpt", nargs="+", help="VAE checkpoints")
     parser.add_argument("--l0_seed", type=int, default=None,
                         help="Given and fixed l0 random seed.")
     args = parser.parse_args()
