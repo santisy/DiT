@@ -112,7 +112,7 @@ def main(args):
                     x2_rec = vae_model_list[1].decode_code(indices)
 
                 ##loss0 = (x0 - x0_rec).abs().mean()
-                loss1 = (x2 - x2_other_rec).abs() / (x2_other.size(1) * x2_other_rec)
+                loss1 = (x2_other - x2_other_rec).abs() / (x2_other.size(1) * x2_other.size(0))
                 loss2 = (x2 - x2_rec).abs() / (x2.size(1) * x2.size(0))
                 print(loss2.sum(), loss1.sum())
                 import pdb; pdb.set_trace()
@@ -125,7 +125,11 @@ def main(args):
                 x0_out[:, :, -3:] = x0[:, :, -3:]
                 x0 = x0_out.clone()
                 #x0 = dataset.denormalize(x0_out.clone(), 0).detach().cpu()
-                x2 = torch.cat([x2_rec, x2_other_rec], dim=-1).clone()
+                x2_other_rec = x2_other_rec.reshape(B, L, -1)
+                x2_rec = x2_rec.reshape(B, L // 8, 10, 10, 10)
+                x2_rec = rearrange(x2_rec, 'b l (n1 x) (n2 y) (n3 z) -> b (l n1 n2 n3) (x y z)',
+                        n1=2, n2=2, n3=2, x=5, y=5, z=5)
+                x2 = torch.cat([x2_rec, x2_other_rec], dim=-1).contiguous().clone()
                 x1 = torch.zeros_like(x1)
                 x0 = dataset.denormalize(x0[0], 0).detach().cpu()
                 x1 = dataset.denormalize(x1[0], 1).detach().cpu()

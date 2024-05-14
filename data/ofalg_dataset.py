@@ -70,7 +70,7 @@ class OFLAGDataset(Dataset):
         elif level_num == 1:
             return [4,]
         elif level_num == 2:
-            return [4, 28]
+            return [4, 28 * 2]
         else:
             raise ValueError(f"Invalid level number {level_num}.")
 

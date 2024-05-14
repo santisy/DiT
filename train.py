@@ -28,6 +28,7 @@ import logging
 import os
 import shutil
 import json
+from einops import rearrange
 
 from models import DiT
 from vae_model import VAE, VAELinear
@@ -290,7 +291,9 @@ def main(args):
             x1 = x1.reshape(B, L // 8, C * 8).contiguous()
             x2 = x2[:, :, :m ** 3].clone().to(device)
             B, L, C = x2.shape
-            x2 = x2.reshape(B, L // 8, C * 8)
+            x2 = rearrange(x2, 'b (l n1 n2 n3) (x y z) -> b l (n1 x) (n2 y) (n3 z)',
+                           n1=2, n2=2, n3=2, x=5, y=5, z=5)
+            x2 = x2.reshape(B, L // 8, -1).contiguous()
 
             # VAE auto-encoding
             if level_num >= 1:

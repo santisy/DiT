@@ -105,7 +105,7 @@ class VAE(nn.Module):
                  **kwargs
                  ):
         super(VAE, self).__init__()
-        embed_dim = latent_ch
+        self.embed_dim = embed_dim = latent_ch
         self.code_n = quant_code_n
         self.g = grid_size
         self.m_ = math.ceil(grid_size / (2 ** downsample_n))
@@ -192,7 +192,7 @@ class VAE(nn.Module):
                 q_loss += q_loss_
                 indices_list.append(info[2])
                 quant_list.append(quant_)
-            indices = torch.cat(indices_list, dim=0)
+            indices = torch.stack(indices_list, dim=-1)
             quant = torch.cat(quant_list, dim=1)
         elif self.quant_version == "v1":
             if self.level_num == 2:
@@ -215,14 +215,19 @@ class VAE(nn.Module):
         B, L, C = c.shape
         c = (c.clamp_(0, 1) * self.code_n).floor().long()
         c = torch.clamp(c, 0, self.code_n - 1)
+        c = c.reshape(B * L, C // 2, 2)
         if self.quant_version == "v0":
-            quant = self.quantize.get_codebook_entry(c, None)
+            quant_list = []
+            for q, c_ in zip(self.quantize, torch.chunk(c, self.quant_heads, dim=-1)):
+                quant_ = q.get_codebook_entry(c_, None)
+                if self.level_num == 2:
+                    quant_ = quant_.reshape(B * L, self.m_, self.m_, self.m_, -1).permute(0, 4, 1, 2, 3).contiguous()
+                else:
+                    quant_ = quant_.reshape(B * L, -1, self.embed_dim).permute(0, 2, 1).contiguous()
+                quant_list.append(quant_)
+            quant = torch.cat(quant_list, dim=1)
         elif self.quant_version == "v1":
             quant = self.quantize.get_output_from_indices(c)
-        if self.level_num == 2:
-            quant = quant.reshape(B * L, self.m_, self.m_, self.m_, -1).permute(0, 4, 1, 2, 3).contiguous()
-        else:
-            quant = quant.permute(0, 2, 1).contiguous()
         out = self.decode(quant)
         out = out.reshape(B, L, -1)
         return out
