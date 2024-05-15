@@ -9,7 +9,6 @@ Sample new images from a pre-trained DiT.
 """
 import os
 import math
-import torch.nn as nn
 import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -22,6 +21,7 @@ import numpy as np
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
+from torch.cuda.amp import autocast
 
 
 def main(args):
@@ -54,22 +54,16 @@ def main(args):
         depth = config.model.depth
         hidden_size = config.model.hidden_sizes[l]
         if l == 2:
-            in_ch = dataset.get_level_vec_len(2)
-            m_ = math.ceil(m / 2)
-            in_ch = int(m_ ** 3)
-            in_ch_list.append(in_ch)
+            hidden_size = 1440
+            in_ch = int(m ** 3)
             num_heads = num_heads * 2
-            cross_layers = config.model.cross_layers
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
             in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
-            in_ch_list.append(in_ch)
             num_heads = num_heads * 2
-            cross_layers = config.model.cross_layers
         elif l == 0: # Root positions and scales
             in_ch = 4
             in_ch_list.append(in_ch)
-            cross_layers = []
 
         # Create DiT model
         model = DiT(
@@ -83,7 +77,7 @@ def main(args):
             mlp_ratio=config.model.mlp_ratio,
             depth=depth,
             num_heads=num_heads,
-            cross_layers=cross_layers,
+            cross_layers=config.model.cross_layers if l != 0 else [],
             learn_sigma=config.diffusion.get("learn_sigma", True),
             # Other flags
             add_inject=config.model.add_inject,
@@ -128,7 +122,7 @@ def main(args):
                             ch,
                             generator=generator,
                             device=device)
-            a = [torch.ones((z.shape[0],) , dtype=torch.int64, device=device) * (diffusion.num_timesteps // 10) for _ in range(l)]
+            a = [torch.zeros((z.shape[0],) , dtype=torch.int64, device=device) for _ in range(l)]
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample

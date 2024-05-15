@@ -36,7 +36,6 @@ from edm import EDMPrecond, EDMLoss
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
-from accelerate import Accelerator
 
 
 #################################################################################
@@ -102,8 +101,6 @@ def main(args):
     """
     Trains a new DiT model.
     """
-    accelerator = Accelerator()
-
     if args.work_on_tmp_dir:
         tmp_dir = os.getenv("SLURM_TMPDIR", "")
     else:
@@ -125,7 +122,7 @@ def main(args):
     assert args.global_batch_size % dist.get_world_size() == 0, \
         "Batch size must be divisible by world size."
     rank = dist.get_rank()
-    device = accelerator.device
+    device = rank % torch.cuda.device_count()
     seed = args.global_seed * dist.get_world_size() + rank
     torch.manual_seed(seed)
     torch.cuda.set_device(device)
@@ -140,7 +137,7 @@ def main(args):
         resume_ckpt = None
 
     # Setup an experiment folder:
-    if accelerator.is_main_process:
+    if rank == 0:
         local_dir = os.path.join(args.results_dir, args.exp_id)
         os.makedirs(local_dir, exist_ok=True)
         run_dir = os.path.join(tmp_dir, args.results_dir, args.exp_id)
@@ -214,7 +211,7 @@ def main(args):
         model.load_state_dict(resume_ckpt["model"])
         ema.load_state_dict(resume_ckpt["ema"])
     requires_grad(ema, False)
-    model, opt, loader = accelerator.prepare(model, opt, loader)
+    model = DDP(model, device_ids=[rank])
     logger.info(f"Diffusion model created.")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
@@ -325,6 +322,8 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
+                if not args.no_lr_decay:
+                    log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
@@ -347,6 +346,8 @@ def main(args):
                         copy_back_fn(checkpoint_path, local_dir)
                 dist.barrier()
 
+        if not args.no_lr_decay:
+            scheduler.step()
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
@@ -366,6 +367,7 @@ if __name__ == "__main__":
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
     parser.add_argument("--sample-every", type=int, default=10000)
+    parser.add_argument("--no-lr-decay", action="store_true")
 
     # Newly added argument
     parser.add_argument("--config-file", type=str, required=True)
