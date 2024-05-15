@@ -101,15 +101,15 @@ def main(args):
 
                 with torch.no_grad():
                     with autocast():
-                        indices = vae_model_list[0].get_normalized_indices(x2_other)
-                    indices = indices.float()
-                    x2_other_rec = vae_model_list[0].decode_code(indices)
+                        indices1 = vae_model_list[0].get_normalized_indices(x2_other)
+                    indices1 = indices1.float()
+                    x2_other_rec = vae_model_list[0].decode_code(indices1)
                     
 
                     with autocast():
-                        indices = vae_model_list[1].get_normalized_indices(x2)
-                    indices = indices.float()
-                    x2_rec = vae_model_list[1].decode_code(indices)
+                        indices2 = vae_model_list[1].get_normalized_indices(x2)
+                    indices2 = indices2.float()
+                    x2_rec = vae_model_list[1].decode_code(indices2)
 
                 ##loss0 = (x0 - x0_rec).abs().mean()
                 loss1 = (x2_other - x2_other_rec).abs() / (x2_other.size(1) * x2_other.size(0))
