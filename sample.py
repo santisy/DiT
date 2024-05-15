@@ -56,10 +56,12 @@ def main(args):
             hidden_size = 1440
             in_ch = int(m ** 3)
             num_heads = num_heads * 2
+            in_ch_list.append(in_ch)
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
             in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
             num_heads = num_heads * 2
+            in_ch_list.append(in_ch)
         elif l == 0: # Root positions and scales
             in_ch = 4
             in_ch_list.append(in_ch)
