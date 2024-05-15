@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from einops import rearrange
-from taming_models import ResnetBlock, Downsample, Upsample, VectorQuantizer2
+from modules.taming_models import ResnetBlock, Downsample, Upsample, VectorQuantizer2
 from vector_quantize_pytorch import VectorQuantize
 
 class reshapeTo3D(nn.Module):

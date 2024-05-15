@@ -32,7 +32,7 @@ from models import DiT
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
 from torch.cuda.amp import GradScaler, autocast
-from edm import EDMPrecond, EDMLoss
+from modules.edm import EDMPrecond, EDMLoss
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn

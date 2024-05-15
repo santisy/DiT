@@ -45,6 +45,9 @@ class OFLAGDataset(Dataset):
     def __len__(self):
         return len(self.file_paths)
 
+    def get_ref_objects(self):
+        pass
+
     def get_sample_num(self):
         return math.floor(len(self) // 4 * 0.05)
 
