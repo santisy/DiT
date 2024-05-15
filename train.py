@@ -32,7 +32,7 @@ import json
 from models import DiT
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
-from torch.cuda.amp import autocast
+from torch.cuda.amp import GradScaler, autocast
 from edm import EDMPrecond, EDMLoss
 
 from data.ofalg_dataset import OFLAGDataset
@@ -169,8 +169,8 @@ def main(args):
     edm_flag = config.model.get("use_EDM", False)
 
     if level_num == 2:
-        in_ch = dataset.get_level_vec_len(2)
-        in_ch = int(math.ceil(m / 2) ** 3)
+        hidden_size = 1440
+        in_ch = int(m ** 3)
         num_heads = num_heads * 2
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
@@ -221,6 +221,7 @@ def main(args):
         opt.load_state_dict(resume_ckpt["opt"])
     if not args.no_lr_decay:
         scheduler = StepLR(opt, step_size=5, gamma=0.999)
+    scaler = GradScaler()
 
 
     sampler = DistributedSampler(
@@ -295,15 +296,17 @@ def main(args):
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             if not edm_flag:
                 t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-                loss_dict = diffusion.training_losses(model, x, t,
-                                                      model_kwargs=model_kwargs)
+                with autocast():
+                    loss_dict = diffusion.training_losses(model, x, t,
+                                                          model_kwargs=model_kwargs)
                 loss = loss_dict["loss"].mean()
             else:
                 loss = edm_loss(model, x, model_kwargs=model_kwargs)
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
-            loss.backward()
-            opt.step()
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
             update_ema(ema, model.module)
 
             # Log loss values:
