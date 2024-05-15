@@ -35,6 +35,7 @@ from vae_model import VAE, VAELinear, loss_function
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
 from torch.optim.lr_scheduler import StepLR
+from torch.cuda.amp import GradScaler, autocast
 
 
 #################################################################################
@@ -217,6 +218,7 @@ def main(args):
         update_ema(ema, model.module, decay=0)  # Ensure EMA is initialized with synced weights
     model_list.train()  # important! This enables embedding dropout for classifier-free guidance
     ema_list.eval()  # EMA model should always be in eval mode
+    scaler = GradScaler()
 
     # Variables for monitoring/logging purposes:
     train_steps = 0
@@ -242,13 +244,15 @@ def main(args):
             loss = 0
 
             for _, (x, model) in enumerate(zip(x_list, model_list)):
-                x_rec, q_loss, _ = model(x)
-                loss_, recon_loss = loss_function(x_rec, x, q_loss)
+                with autocast():
+                    x_rec, q_loss, _ = model(x)
+                    loss_, recon_loss = loss_function(x_rec, x, q_loss)
                 loss += loss_
 
             opt.zero_grad()
-            loss.backward()
-            opt.step()
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
 
             for ema, model in zip(ema_list, model_list):
                 update_ema(ema, model.module)

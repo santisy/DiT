@@ -23,7 +23,7 @@ vae:
     latent_ch: 3
     latent_ratio: 4
     quant_version: "v0"
-    quant_code_n: 512
+    quant_code_n: 256
     quant_heads: 2
     downsample_n: 2
     linear: false
