@@ -192,12 +192,12 @@ def main(args):
     hidden_size = config.model.hidden_sizes[level_num]
     edm_flag = config.model.get("use_EDM", False)
 
-    if level_num == 2:
-        in_ch = dataset.get_level_vec_len(2)
-        in_ch = int(math.ceil(m / 2) ** 3) * 2
-    elif level_num == 1: # Leaf 
+    if level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
-        in_ch = int(dataset.get_level_vec_len(2) - m ** 3) * 8 // 4
+        hidden_size = 1440
+        in_ch_2 = int(math.ceil(m / 2) ** 3) * 2
+        in_ch_1 = int(dataset.get_level_vec_len(2) - m ** 3) * 8 // 4
+        in_ch = in_ch_1 + in_ch_2
     elif level_num == 0: # Root positions and scales
         num_heads = 16
         in_ch = 4
@@ -207,8 +207,8 @@ def main(args):
         # Data related
         in_channels=in_ch, # Combine to each children
         num_classes=config.data.num_classes,
-        condition_node_num=dataset.get_condition_num(level_num),
-        condition_node_dim=dataset.get_condition_dim(level_num),
+        condition_node_num=dataset.get_condition_num(1),
+        condition_node_dim=dataset.get_condition_dim(1),
         # Network itself related
         hidden_size=hidden_size, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,
@@ -294,7 +294,7 @@ def main(args):
             B, L, C = x2.shape
             x2 = rearrange(x2, 'b (l n1 n2 n3) (x y z) -> b l (n1 x) (n2 y) (n3 z)',
                            n1=2, n2=2, n3=2, x=5, y=5, z=5)
-            x2 = x2.reshape(B, L // 8, -1).contiguous()
+            x2 = x2.reshape(B, L // 8, -1).contiguous().clone()
 
             # VAE auto-encoding
             if level_num >= 1:
@@ -304,7 +304,6 @@ def main(args):
                         with autocast():
                             x1_list.append(vae_model_list[0].get_normalized_indices(x1_))
                     x1 = torch.cat(x1_list, dim=0).detach().float()
-            if level_num >= 2:
                 with torch.no_grad():
                     x2_list = []
                     for x2_ in torch.split(x2, 4, dim=0):
@@ -322,17 +321,10 @@ def main(args):
                 xc = []
                 positions = []
             if level_num == 1:
-                x = x1
+                x = torch.cat([x1, x2], dim=-1)
                 xc = [x0,]
-                a = [torch.randint(0, diffusion.num_timesteps // 2, (x.shape[0],), device=device),]
+                a = [torch.randint(0, diffusion.num_timesteps // 3, (x.shape[0],), device=device),]
                 positions = [None,]
-            elif level_num == 2:
-                x = x2
-                xc = [x0, x1]
-                a = [torch.randint(0, diffusion.num_timesteps // 2, (x.shape[0],), device=device),
-                     torch.randint(0, diffusion.num_timesteps // 2, (x.shape[0],), device=device)
-                    ]
-                positions = [None, None]
 
             # Noise augmentation
             xc = noise_conditioning(xc, a, diffusion)
