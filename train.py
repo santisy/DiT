@@ -16,7 +16,6 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-import numpy as np
 from collections import OrderedDict
 from copy import deepcopy
 from easydict import EasyDict as edict
@@ -32,11 +31,11 @@ import json
 from models import DiT
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
-from torch.cuda.amp import autocast
 from edm import EDMPrecond, EDMLoss
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
+from accelerate import Accelerator
 
 
 #################################################################################
@@ -102,6 +101,8 @@ def main(args):
     """
     Trains a new DiT model.
     """
+    accelerator = Accelerator()
+
     if args.work_on_tmp_dir:
         tmp_dir = os.getenv("SLURM_TMPDIR", "")
     else:
@@ -123,7 +124,7 @@ def main(args):
     assert args.global_batch_size % dist.get_world_size() == 0, \
         "Batch size must be divisible by world size."
     rank = dist.get_rank()
-    device = rank % torch.cuda.device_count()
+    device = accelerator.device
     seed = args.global_seed * dist.get_world_size() + rank
     torch.manual_seed(seed)
     torch.cuda.set_device(device)
@@ -138,7 +139,7 @@ def main(args):
         resume_ckpt = None
 
     # Setup an experiment folder:
-    if rank == 0:
+    if accelerator.is_main_process:
         local_dir = os.path.join(args.results_dir, args.exp_id)
         os.makedirs(local_dir, exist_ok=True)
         run_dir = os.path.join(tmp_dir, args.results_dir, args.exp_id)
@@ -212,15 +213,13 @@ def main(args):
         model.load_state_dict(resume_ckpt["model"])
         ema.load_state_dict(resume_ckpt["ema"])
     requires_grad(ema, False)
-    model = DDP(model, device_ids=[rank])
+    model, opt, loader = accelerator.prepare(model, opt, loader)
     logger.info(f"Diffusion model created.")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
     if resume_ckpt is not None:
         opt.load_state_dict(resume_ckpt["opt"])
-    if not args.no_lr_decay:
-        scheduler = StepLR(opt, step_size=5, gamma=0.999)
 
 
     sampler = DistributedSampler(
@@ -302,7 +301,7 @@ def main(args):
                 loss = edm_loss(model, x, model_kwargs=model_kwargs)
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
-            loss.backward()
+            accelerator.backward(loss)
             opt.step()
             update_ema(ema, model.module)
 
@@ -320,8 +319,6 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
-                if not args.no_lr_decay:
-                    log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
@@ -344,8 +341,6 @@ def main(args):
                         copy_back_fn(checkpoint_path, local_dir)
                 dist.barrier()
 
-        if not args.no_lr_decay:
-            scheduler.step()
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
@@ -365,7 +360,6 @@ if __name__ == "__main__":
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
     parser.add_argument("--sample-every", type=int, default=10000)
-    parser.add_argument("--no-lr-decay", action="store_true")
 
     # Newly added argument
     parser.add_argument("--config-file", type=str, required=True)
