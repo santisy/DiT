@@ -16,7 +16,6 @@ from diffusion import create_diffusion
 from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 from models import DiT
-import numpy as np
 
 import argparse
 from data.ofalg_dataset import OFLAGDataset
@@ -99,7 +98,10 @@ def main(args):
 
     batch_size = args.sample_batch_size
     sample_num = args.sample_num
-    for i in range(sample_num // batch_size):
+    if args.sample_all:
+        sample_num = dataset.get_sample_num()
+        print(f"\033[92mSample all five percent objects {sample_num}.\033[00m")
+    for i in range(sample_num // batch_size + 1):
         xc = []
         positions = []
         scales = []
@@ -126,16 +128,17 @@ def main(args):
             model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
 
             # Sample
-            samples = diffusion.p_sample_loop(model_list[l].forward,
-                                              z.shape,
-                                              z,
-                                              model_kwargs=model_kwargs,
-                                              clip_denoised=False,
-                                              progress=False,
-                                              device=device)
+            with autocast():
+                samples = diffusion.p_sample_loop(model_list[l].forward,
+                                                z.shape,
+                                                z,
+                                                model_kwargs=model_kwargs,
+                                                clip_denoised=False,
+                                                progress=False,
+                                                device=device)
 
             # Append the generated latents for the following generation
-            samples = samples.clip_(0, 1)
+            samples = samples.float().clip_(0, 1)
 
             if l == 1:
                 B, L, C = samples.shape
@@ -177,6 +180,8 @@ if __name__ == "__main__":
     parser.add_argument("--export-dir", type=str, required=True)
     parser.add_argument("--config-file", type=str, required=True)
     parser.add_argument("--data-root", type=str, required=True)
+    parser.add_argument("-a", "--sample_all", action="store_true",
+                        help="Sample all the needed samples to calculate the metrics.")
     parser.add_argument("--sample-num", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=4)
     parser.add_argument("--l0_seed", type=int, default=None,

@@ -1,5 +1,6 @@
 import json
 import glob
+import math
 import os
 
 from torch.utils.data import Dataset
@@ -43,6 +44,9 @@ class OFLAGDataset(Dataset):
 
     def __len__(self):
         return len(self.file_paths)
+
+    def get_sample_num(self):
+        return math.floor(len(self) // 4 * 0.05)
 
     def get_level_vec_len(self, level_num):
         if level_num == 0:
