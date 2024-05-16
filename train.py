@@ -31,7 +31,7 @@ import json
 from einops import rearrange
 
 from models import DiT
-from vae_model import VAE, VAELinear
+from vae_model import VAE
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
 from torch.cuda.amp import GradScaler, autocast
@@ -242,11 +242,9 @@ def main(args):
     #logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
     if resume_ckpt is not None:
         opt.load_state_dict(resume_ckpt["opt"])
-    if not args.no_lr_decay:
-        scheduler = StepLR(opt, step_size=5, gamma=0.999)
     scaler = GradScaler()
 
 
@@ -342,6 +340,8 @@ def main(args):
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
             scaler.scale(loss).backward()
+            scaler.unscale_(opt)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             scaler.step(opt)
             scaler.update()
             update_ema(ema, model.module)
@@ -360,8 +360,6 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
-                if not args.no_lr_decay:
-                    log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
@@ -383,9 +381,6 @@ def main(args):
                     if args.work_on_tmp_dir:
                         copy_back_fn(checkpoint_path, local_dir)
                 dist.barrier()
-
-        if not args.no_lr_decay:
-            scheduler.step()
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
