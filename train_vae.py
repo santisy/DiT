@@ -188,6 +188,7 @@ def main(args):
                 quant_version=config.vae.get("quant_version", "v0"),
                 quant_heads=config.vae.get("quant_heads", 1),
                 downsample_n=config.vae.get("downsample_n", 1),
+                kl_flag=config.vae.get("kl_flag", False),
                 level_num=level_num)
     
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training

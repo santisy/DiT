@@ -101,10 +101,13 @@ class VAE(nn.Module):
                  quant_heads=1,
                  downsample_n=2,
                  level_num=2,
+                 kl_flag=False,
                  *args,
                  **kwargs
                  ):
         super(VAE, self).__init__()
+        if level_num == 2:
+            downsample_n = min(2, downsample_n)
         self.embed_dim = embed_dim = latent_ch
         self.code_n = quant_code_n
         self.g = grid_size
@@ -113,6 +116,7 @@ class VAE(nn.Module):
         self.quant_heads = quant_heads
         self.downsample_n = downsample_n
         self.level_num = level_num
+        self.kl_flag = kl_flag
 
         if level_num == 2:
             conv = nn.Conv3d
@@ -134,54 +138,76 @@ class VAE(nn.Module):
                                       conv(1, in_ch, 3, 1, 1))
         fc1 = []
         # First res
-        fc1.extend([resnet_block(in_ch) for _ in range(layer_n)])
-        fc1.append(downsample1(in_ch))
-        fc1.append(resnet_block(in_ch, in_ch * 2))
-        fc1.extend([resnet_block(in_ch * 2) for _ in range(layer_n)])
-        fc1.append(downsample2(in_ch * 2))
-        fc1.append(resnet_block(in_ch * 2, in_ch * 4))
-        fc1.extend([resnet_block(in_ch * 4) for _ in range(layer_n)])
+        ch = None
+        for i in range(downsample_n):
+            ch = int(in_ch * 2 ** i)
+            fc1.extend([resnet_block(ch) for _ in range(layer_n)])
+            fc1.append(downsample1(ch))
+            fc1.append(resnet_block(ch, ch * 2))
+        ch = ch * 2
+        ch_last = ch
+        fc1.extend([resnet_block(ch) for _ in range(layer_n)])
         self.fc1 = nn.Sequential(*fc1)
 
         # Decoder
         fc4 = []
-        fc4.extend([resnet_block(in_ch * 4) for _ in range(layer_n)])
-        fc4.append(upsample2(in_ch * 4))
-        fc4.append(resnet_block(in_ch * 4, in_ch * 2))
-        fc4.extend([resnet_block(in_ch * 2, in_ch * 2) for _ in range(layer_n)])
-        fc4.append(upsample1(in_ch * 2))
-        fc4.append(resnet_block(in_ch * 2, in_ch))
-        fc4.extend([resnet_block(in_ch) for _ in range(layer_n)])
+        for i in range(downsample_n):
+            fc4.extend([resnet_block(ch) for _ in range(layer_n)])
+            fc4.append(upsample2(ch))
+            fc4.append(resnet_block(ch, ch // 2))
+            ch = ch // 2
+
+        fc4.extend([resnet_block(ch) for _ in range(layer_n)])
         self.fc4 = nn.Sequential(*fc4)
 
         self.output_fc = nn.Sequential(conv(in_ch, 1, 3, 1, 1),
                                        nn.Sigmoid())
 
         # Quantizer
-        print(f"\033[92m Use quant version {quant_version}.\033[00m")
-        if quant_version == "v0":
-            self.quantize = nn.ModuleList()
-            for _ in range(quant_heads):
-                self.quantize.append(VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
-                                                      remap=None,
-                                                      sane_index_shape=False,
-                                                      legacy=False))
-            self.quant_conv = conv(in_ch * 4 // quant_heads, embed_dim, 1, 1, 0)
-            self.post_quant_conv = conv(embed_dim * quant_heads, in_ch * 4, 1, 1, 0)
-        elif quant_version == "v1":
-            self.quantize = VectorQuantize(dim = in_ch * 4,
-                                           codebook_size = self.code_n,
-                                           codebook_dim=embed_dim,
-                                           use_cosine_sim=True,
-                                           separate_codebook_per_head = True,
-                                           heads=quant_heads)
+        if not kl_flag:
+            print(f"\033[92m Use quant version {quant_version}.\033[00m")
+            if quant_version == "v0":
+                self.quantize = nn.ModuleList()
+                for _ in range(quant_heads):
+                    self.quantize.append(VectorQuantizer2(self.code_n, embed_dim, beta=0.25,
+                                                        remap=None,
+                                                        sane_index_shape=False,
+                                                        legacy=False))
+                self.quant_conv = conv(ch_last // quant_heads, embed_dim, 1, 1, 0)
+                self.post_quant_conv = conv(embed_dim * quant_heads, ch_last, 1, 1, 0)
+            elif quant_version == "v1":
+                self.quantize = VectorQuantize(dim = ch_last,
+                                               codebook_size = self.code_n,
+                                               codebook_dim=embed_dim,
+                                               use_cosine_sim=True,
+                                               separate_codebook_per_head = True,
+                                               heads=quant_heads)
+        else:
+            self.fc2_mean = conv(ch_last, embed_dim, 1, 1, 0)
+            self.fc2_logvar = conv(ch_last, embed_dim, 1, 1, 0)
+            self.post_quant_conv = conv(embed_dim, ch_last, 1, 1, 0)
+
 
     def get_code_book_n(self):
         return self.code_n
 
+    def reparameterize(self, mean, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mean + eps*std
+
     def encode(self, x):
+        B, L, _ = x.shape
+
         h = self.input_fc(x)
         h = self.fc1(h)
+        if self.kl_flag:
+            mean = self.fc2_mean(h)
+            logvar = self.fc2_logvar(h)
+            out = self.reparameterize(mean, logvar)
+            q_loss = - 0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp()) / (B * L) * 1e-6
+            return out, q_loss, None
+
         if self.quant_version == "v0":
             indices_list = []
             quant_list = []
@@ -204,7 +230,7 @@ class VAE(nn.Module):
         return quant, q_loss, indices
 
     def decode(self, z):
-        if self.quant_version == "v0":
+        if self.quant_version == "v0" or self.kl_flag:
             h = self.post_quant_conv(z)
         else:
             h = z
@@ -234,10 +260,16 @@ class VAE(nn.Module):
 
     def get_normalized_indices(self, x):
         B, L, C = x.shape
-        _, _, indices = self.encode(x)
-        indices = indices / float(self.code_n)
-        indices = indices.reshape(B, L, -1)
-        return indices
+        if not self.kl_flag:
+            _, _, indices = self.encode(x)
+            indices = indices / float(self.code_n)
+            indices = indices.reshape(B, L, -1)
+            return indices
+        else:
+            out, _, _ = self.encode(x)
+            out = out.reshape(B, L, -1)
+            return out
+
         
     def forward(self, x):
         B, L, C = x.shape
@@ -285,10 +317,12 @@ class OnlineVariance(object):
         return std
 
 if __name__ == "__main__":
-    vae = VAE(2, 32, 128, 10,
+    vae = VAE(2, 64, 1, 10,
+              downsample_n=3,
               quant_code_n=512,
               quant_heads=1,
               quant_version="v0",
+              kl_flag=True,
               level_num=1)
     input_data = torch.randn(1, 4, 128)
     output_data, q_loss, _= vae(input_data)
