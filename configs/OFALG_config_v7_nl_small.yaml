@@ -1,7 +1,7 @@
 model:
-    depth: 24
+    depth: 20
     mlp_ratio: 2.0
-    cross_layers: [4, 8, 12, 16, 20]
+    cross_layers: [4, 8, 12, 16]
     num_heads: 16
     add_inject: true
     pos_emedding_version: "v2"

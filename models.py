@@ -285,8 +285,9 @@ class ConvUp(nn.Module):
             Upsample3(ch, with_conv=True),
             resnet_block(ch, ch * 2, temb_channels=hidden_size),
             Upsample3(ch * 2, with_conv=True),
-            resnet_block(ch * 2, 1, temb_channels=hidden_size),
+            resnet_block(ch * 2, ch * 2, temb_channels=hidden_size),
         )
+        self.output_conv =  conv(ch * 2, 1, 1, 1)
     def forward(self, x, t):
         x = self.input_conv(x)
         for i, layer in enumerate(self.conv_down):
@@ -294,13 +295,14 @@ class ConvUp(nn.Module):
                 x = layer(x, t)
             else:
                 x = layer(x)
+        x = self.output_conv(x)
         return x
 
 class UnpackLayer(nn.Module):
     """Unpacking node"""
     def __init__(self, in_channels, hidden_size,
                  sibling_num=4,
-                 ch=128):
+                 ch=32):
         super().__init__()
         self.sibling_num = sibling_num
         self.map = nn.Linear(hidden_size, in_channels * sibling_num // 4)
@@ -358,8 +360,9 @@ class ConvDown(nn.Module):
             Downsample3(ch, with_conv=True),
             resnet_block(ch, ch * 2, temb_channels=hidden_size),
             Downsample3(ch * 2, with_conv=True),
-            resnet_block(ch * 2, 1, temb_channels=hidden_size),
+            resnet_block(ch * 2, ch * 2, temb_channels=hidden_size),
         )
+        self.output_conv = conv(ch * 2, 1, 1, 1)
     def forward(self, x, t):
         x = self.input_conv(x)
         for i, layer in enumerate(self.conv_down):
@@ -367,13 +370,14 @@ class ConvDown(nn.Module):
                 x = layer(x, t)
             else:
                 x = layer(x)
+        x = self.output_conv(x)
         return x
 
 class PackLayer(nn.Module):
     """Packing node"""
     def __init__(self, in_channels, hidden_size,
                  sibling_num=4,
-                 ch=128):
+                 ch=32):
         super().__init__()
         self.sibling_num = sibling_num
         self.map = nn.Linear(in_channels * sibling_num // 4, hidden_size)
@@ -496,10 +500,11 @@ class DiT(nn.Module):
         # nn.init.constant_(self.input_layer.adaLN_modulation[-1].weight, 0) 
         # nn.init.constant_(self.input_layer.adaLN_modulation[-1].bias, 0) 
         # Output
-        nn.init.constant_(self.output_layer.linear.weight, 0.0)
-        nn.init.constant_(self.output_layer.linear.bias, 0.0)
-        nn.init.constant_(self.output_layer.adaLN_modulation[-1].weight, 0) 
-        nn.init.constant_(self.output_layer.adaLN_modulation[-1].bias, 0) 
+        if self.level_num == 0:
+            nn.init.constant_(self.output_layer.linear.weight, 0.0)
+            nn.init.constant_(self.output_layer.linear.bias, 0.0)
+            nn.init.constant_(self.output_layer.adaLN_modulation[-1].weight, 0) 
+            nn.init.constant_(self.output_layer.adaLN_modulation[-1].bias, 0) 
 
         # Initialize label embedding table:
         if self.y_embedder is not None:

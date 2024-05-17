@@ -328,7 +328,11 @@ class ResnetBlock(nn.Module):
         h = self.conv1(h)
 
         if temb is not None:
-            h = h + self.temb_proj(nonlinearity(temb))[:, :, None]
+            B_h, L, C = h.shape
+            t = self.temb_proj(nonlinearity(temb))[:, :, None]
+            B = t.size(0)
+            h = h.reshape(B, B_h // B, L, C) + t.unsqueeze(dim=1)
+            h = h.reshape(B_h, L, C)
 
         h = self.norm2(h)
         h = nonlinearity(h)
