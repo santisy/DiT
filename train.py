@@ -177,6 +177,7 @@ def main(args):
     dataset = OFLAGDataset(args.data_root, **config.data)
     in_ch = dataset.get_level_vec_len(2)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+    quant_head = config.vae.get("quant_heads", 1)
 
     # Prepare VAE model
     if level_num in [1, 2]:
@@ -189,7 +190,7 @@ def main(args):
                             m * 2,
                             quant_code_n=config.vae.get("quant_code_n", 2048),
                             quant_version=config.vae.get("quant_version", "v0"),
-                            quant_heads=config.vae.get("quant_heads", 1),
+                            quant_heads=quant_head,
                             downsample_n=config.vae.get("downsample_n", 1),
                             level_num=l)
 
@@ -209,8 +210,8 @@ def main(args):
     if level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
         hidden_size = 1440
-        in_ch_2 = int(math.ceil(m / 2) ** 3) * 2
-        in_ch_1 = int(dataset.get_level_vec_len(2) - m ** 3) * 8 // 4
+        in_ch_2 = int(math.ceil(m / 2) ** 3) * quant_head
+        in_ch_1 = int(dataset.get_level_vec_len(2) - m ** 3) * 8 // 4 * quant_head
         in_ch = in_ch_1 + in_ch_2
     elif level_num == 0: # Root positions and scales
         num_heads = 16
