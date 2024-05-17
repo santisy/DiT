@@ -19,8 +19,8 @@ from typing import List
 from timm.models.vision_transformer import Attention, Mlp
 
 from utils.positional_embedding import fourier_positional_encoding
-from utils.positional_embedding import positional_encode
-
+from modules.taming_models import Downsample3, Upsample3, ResnetBlock
+from vae_model import reshapeTo1D
 
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
@@ -271,6 +271,49 @@ class InputLayer(nn.Module):
         x = modulate(self.norm_input(x), shift, scale)
         return x
 
+class ConvUp(nn.Module):
+    def __init__(self, ch, hidden_size):
+        super().__init__()
+        conv = nn.Conv1d
+        resnet_block = partial(ResnetBlock, conv=conv)
+        self.input_conv = nn.Sequential(
+            reshapeTo1D(None),
+            conv(1, ch, 3, 1, 1),
+        )
+        self.conv_down = nn.Sequential(
+            resnet_block(ch, temb_channels=hidden_size),
+            Upsample3(ch, with_conv=True),
+            resnet_block(ch, ch * 2, temb_channels=hidden_size),
+            Upsample3(ch * 2, with_conv=True),
+            resnet_block(ch * 2, 1, temb_channels=hidden_size),
+        )
+    def forward(self, x, t):
+        x = self.input_conv(x)
+        for i, layer in enumerate(self.conv_down):
+            if i % 2 == 0:
+                x = layer(x, t)
+            else:
+                x = layer(x)
+        return x
+
+class UnpackLayer(nn.Module):
+    """Unpacking node"""
+    def __init__(self, in_channels, hidden_size,
+                 sibling_num=4,
+                 ch=128):
+        super().__init__()
+        self.sibling_num = sibling_num
+        self.map = nn.Linear(hidden_size, in_channels * sibling_num // 4)
+        self.conv_up = ConvUp(ch, hidden_size)
+
+    def forward(self, x, t):
+        x = self.map(x)
+        B, L, C = x.shape
+        x = self.conv_up(x, t)
+        x = x.reshape(B, L, C * 4)
+        x = x.reshape(B, L * self.sibling_num, C  * 4 // self.sibling_num)
+        return x
+
 class FinalLayer(nn.Module):
     """
     The final layer of DiT.
@@ -290,8 +333,8 @@ class FinalLayer(nn.Module):
             nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
 
-    def forward(self, x, c):
-        shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
+    def forward(self, x, t):
+        shift, scale = self.adaLN_modulation(t).chunk(2, dim=1)
         x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
         if self.aligned_gen:
@@ -301,17 +344,48 @@ class FinalLayer(nn.Module):
             x = x.reshape(B, L * self.sibling_num, C // self.sibling_num)
         return x
 
+class ConvDown(nn.Module):
+    def __init__(self, ch, hidden_size):
+        super().__init__()
+        conv = nn.Conv1d
+        resnet_block = partial(ResnetBlock, conv=conv)
+        self.input_conv = nn.Sequential(
+            reshapeTo1D(None),
+            conv(1, ch, 3, 1, 1),
+        )
+        self.conv_down = nn.Sequential(
+            resnet_block(ch, temb_channels=hidden_size),
+            Downsample3(ch, with_conv=True),
+            resnet_block(ch, ch * 2, temb_channels=hidden_size),
+            Downsample3(ch * 2, with_conv=True),
+            resnet_block(ch * 2, 1, temb_channels=hidden_size),
+        )
+    def forward(self, x, t):
+        x = self.input_conv(x)
+        for i, layer in enumerate(self.conv_down):
+            if i % 2 == 0:
+                x = layer(x, t)
+            else:
+                x = layer(x)
+        return x
+
 class PackLayer(nn.Module):
     """Packing node"""
-    def __init__(self, in_channels, hidden_size, sibling_num=4):
+    def __init__(self, in_channels, hidden_size,
+                 sibling_num=4,
+                 ch=128):
         super().__init__()
         self.sibling_num = sibling_num
-        self.map = nn.Linear(in_channels * sibling_num, hidden_size)
+        self.map = nn.Linear(in_channels * sibling_num // 4, hidden_size)
+        self.conv_down = ConvDown(ch, hidden_size)
 
-    def forward(self, x):
+    def forward(self, x, t):
         B, L, C = x.shape
         x = x.reshape(B, L // self.sibling_num, self.sibling_num, C)
         x = x.reshape(B, L // self.sibling_num, self.sibling_num * C)
+        B, L, C = x.shape
+        x = self.conv_down(x, t)
+        x = x.reshape(B, L, -1)
         return self.map(x)
 
 
@@ -351,6 +425,7 @@ class DiT(nn.Module):
         self.add_inject = add_inject
         self.aligned_gen = aligned_gen
         self.pos_embedding_version = pos_embedding_version
+        self.level_num = level_num
 
         # Input layer
         if not aligned_gen:
@@ -391,9 +466,13 @@ class DiT(nn.Module):
                 self.blocks.append(block_class(cross_attention=True))
 
         # We do not need final layers
-        self.output_layer = FinalLayer(hidden_size, self.out_channels,
-                                       sibling_num=sibling_num,
-                                       aligned_gen=aligned_gen)
+        if level_num == 0:
+            self.output_layer = FinalLayer(hidden_size, self.out_channels,
+                                        sibling_num=sibling_num,
+                                        aligned_gen=aligned_gen)
+        else:
+            self.output_layer = UnpackLayer(in_channels, hidden_size, sibling_num)
+
 
         self.initialize_weights()
 
@@ -490,7 +569,8 @@ class DiT(nn.Module):
             y = 0
         c = t + y + sum(a_out)                              # (N, D)
 
-        x = self.input_layer(x)
+        if self.level_num > 0:
+            x = self.input_layer(x, c)
         ## -1 means using the nearest level GT positions as the positional encoding
         if len(PEs) > 0 and self.pos_embedding_version != "v2":
             x = x + PEs[-1]
