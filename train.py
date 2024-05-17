@@ -257,7 +257,7 @@ def main(args):
     #logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=0)
+    opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
     if resume_ckpt is not None:
         opt.load_state_dict(resume_ckpt["opt"])
     scheduler = LambdaLR(opt, lr_lambda)
@@ -357,7 +357,7 @@ def main(args):
             opt.zero_grad()
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             scaler.step(opt)
             scaler.update()
             update_ema(ema, model.module)
