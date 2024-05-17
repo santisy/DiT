@@ -257,19 +257,19 @@ def main(args):
             loss = 0
 
             for _, (x, model) in enumerate(zip(x_list, model_list)):
-                with autocast():
+                with autocast(enabled=not args.no_mixed_pc):
                     x_rec, q_loss, _ = model(x)
                     loss_, recon_loss = loss_function(x_rec, x, q_loss)
                 loss += loss_
 
             opt.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.unscale_(opt)
-
-            #clipped_norm = torch.nn.utils.clip_grad_norm_(model_list[0].parameters(), max_norm=100.0)
-            #print(clipped_norm)
-            scaler.step(opt)
-            scaler.update()
+            if not args.no_mixed_pc:
+                scaler.scale(loss).backward()
+                scaler.step(opt)
+                scaler.update()
+            else:
+                loss.backward()
+                opt.step()
 
             for ema, model in zip(ema_list, model_list):
                 update_ema(ema, model.module)
@@ -364,6 +364,7 @@ if __name__ == "__main__":
     parser.add_argument("--work-on-tmp-dir", action="store_true")
     parser.add_argument("--level-num", type=int, default=0)
     parser.add_argument("--resume", type=str, default=None)
+    parser.add_argument("--no-mixed-pc", action="store_true")
 
     args = parser.parse_args()
     main(args)
