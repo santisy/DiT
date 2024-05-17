@@ -192,8 +192,8 @@ def main(args):
     
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     if resume_ckpt is not None:
-        model.load_state_dict(resume_ckpt["model"])
-        ema.load_state_dict(resume_ckpt["ema"])
+        model.load_state_dict(resume_ckpt["model"][0])
+        ema.load_state_dict(resume_ckpt["ema"][0])
     requires_grad(ema, False)
     ema_list.append(ema)
     # Put DDP on this
@@ -201,7 +201,7 @@ def main(args):
     model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model_list.parameters(), lr=0.0002)
+    opt = torch.optim.AdamW(model_list.parameters(), lr=0.0001)
     if resume_ckpt is not None:
         opt.load_state_dict(resume_ckpt["opt"])
     scheduler = StepLR(opt, step_size=3, gamma=0.999)
@@ -264,7 +264,9 @@ def main(args):
             opt.zero_grad()
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
-            torch.nn.utils.clip_grad_norm_(model_list[0].parameters(), max_norm=1.0)
+
+            #clipped_norm = torch.nn.utils.clip_grad_norm_(model_list[0].parameters(), max_norm=100.0)
+            #print(clipped_norm)
             scaler.step(opt)
             scaler.update()
 

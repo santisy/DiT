@@ -98,7 +98,7 @@ def noise_conditioning(x_list, a_list, diff):
 
 # Parameters for the learning rate schedule
 warmup_steps = 5000      # Number of steps to warm up
-total_steps = 100000      # Total number of training steps
+total_steps = 200000      # Total number of training steps
 final_lr_factor = 0.2    # Final learning rate is 0.1 * LR_{target}
 
 # Lambda function to adjust learning rate
@@ -180,9 +180,9 @@ def main(args):
     quant_head = config.vae.get("quant_heads", 1)
 
     # Prepare VAE model
-    if level_num in [1, 2]:
+    if level_num == 1:
         vae_model_list = nn.ModuleList()
-        for l in range(1, level_num + 1):
+        for l in range(1, 3):
             vae_ckpt = torch.load(args.vae_ckpt[l - 1], map_location=map_fn)
             vae_model = VAE(config.vae.layer_n,
                             config.vae.in_ch,
@@ -209,7 +209,7 @@ def main(args):
 
     if level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
-        hidden_size = 1440
+        hidden_size = 1152
         in_ch_2 = int(math.ceil(m / 2) ** 3) * quant_head
         in_ch_1 = int(dataset.get_level_vec_len(2) - m ** 3) * 8 // 4 * quant_head
         in_ch = in_ch_1 + in_ch_2
@@ -357,7 +357,7 @@ def main(args):
             opt.zero_grad()
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             scaler.step(opt)
             scaler.update()
             update_ema(ema, model.module)
