@@ -118,18 +118,20 @@ class VAE(nn.Module):
         self.level_num = level_num
         self.kl_flag = kl_flag
 
+        upsample_list = []
+        downsample_list = []
         if level_num == 2:
             conv = nn.Conv3d
             reshapeModule = reshapeTo3D
-            downsample1 = partial(Downsample, with_conv=True)
-            downsample2 = partial(Downsample2, with_conv=True)
-            upsample1 = partial(Upsample, with_conv=True)
-            upsample2 = partial(Upsample2, with_conv=True)
+            downsample_list.append(partial(Downsample, with_conv=True))
+            downsample_list.append(partial(Downsample2, with_conv=True))
+            upsample_list.append(partial(Upsample, with_conv=True))
+            upsample_list.append(partial(Upsample2, with_conv=True))
         else:
             conv = nn.Conv1d
             reshapeModule = reshapeTo1D
-            downsample1 = downsample2 = partial(Downsample3, with_conv=True)
-            upsample1 = upsample2 = partial(Upsample3, with_conv=True)
+            downsample_list.extend([partial(Downsample3, with_conv=True) for _ in range(downsample_n)])
+            upsample_list.extend([partial(Upsample3, with_conv=True) for _ in range(downsample_n)])
 
         resnet_block = partial(ResnetBlock, conv=conv)
 
@@ -142,7 +144,7 @@ class VAE(nn.Module):
         for i in range(downsample_n):
             ch = int(in_ch * 2 ** i)
             fc1.extend([resnet_block(ch) for _ in range(layer_n)])
-            fc1.append(downsample1(ch))
+            fc1.append(downsample_list[i](ch))
             fc1.append(resnet_block(ch, ch * 2))
         ch = ch * 2
         ch_last = ch
@@ -153,7 +155,7 @@ class VAE(nn.Module):
         fc4 = []
         for i in range(downsample_n):
             fc4.extend([resnet_block(ch) for _ in range(layer_n)])
-            fc4.append(upsample2(ch))
+            fc4.append(upsample_list[i](ch))
             fc4.append(resnet_block(ch, ch // 2))
             ch = ch // 2
 
