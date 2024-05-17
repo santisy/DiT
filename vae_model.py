@@ -125,8 +125,8 @@ class VAE(nn.Module):
             reshapeModule = reshapeTo3D
             downsample_list.append(partial(Downsample, with_conv=True))
             downsample_list.append(partial(Downsample2, with_conv=True))
-            upsample_list.append(partial(Upsample, with_conv=True))
             upsample_list.append(partial(Upsample2, with_conv=True))
+            upsample_list.append(partial(Upsample, with_conv=True))
         else:
             conv = nn.Conv1d
             reshapeModule = reshapeTo1D
