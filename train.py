@@ -168,7 +168,6 @@ def main(args):
     edm_flag = config.model.get("use_EDM", False)
 
     if level_num == 2:
-        hidden_size = 1024
         in_ch = int(m ** 3)
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
