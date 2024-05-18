@@ -13,3 +13,4 @@ dependencies:
     - opencv-python-headless
     - ruamel.yaml
     - easydict
+    - flash-attn --no-build-isolation

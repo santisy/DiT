@@ -168,13 +168,11 @@ def main(args):
     edm_flag = config.model.get("use_EDM", False)
 
     if level_num == 2:
-        hidden_size = 1440
+        hidden_size = 1024
         in_ch = int(m ** 3)
-        num_heads = num_heads * 2
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
         in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
-        num_heads = num_heads * 2
     elif level_num == 0: # Root positions and scales
         in_ch = 4
 
@@ -194,7 +192,7 @@ def main(args):
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
-        aligned_gen=True if level_num != 0 else False,
+        aligned_gen=False,
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num
     ).to(device)
@@ -281,8 +279,6 @@ def main(args):
             elif level_num == 2:
                 x = x2
                 B, L, C = x1.shape
-                x1 = x1.reshape(B, L // 8, 8, C)
-                x1 = x1.reshape(B, L // 8, 8 * C).contiguous()
                 xc = [x0, x1]
                 a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),
                      torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device)
