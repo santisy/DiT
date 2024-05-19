@@ -397,6 +397,7 @@ class DiT(nn.Module):
         self.add_inject = add_inject
         self.aligned_gen = aligned_gen
         self.pos_embedding_version = pos_embedding_version
+        self.level_num = level_num
 
         # Input layer
         if not aligned_gen:
@@ -504,25 +505,19 @@ class DiT(nn.Module):
         """
 
         # Variance preserving noising x0, and positions
-        batch_size = x.size(0)
+        batch_size, L, C = x.shape
         PEs = []
         for i, (a_, p_) in enumerate(zip(a, positions)):
             #a_ = a_.reshape([batch_size, 1, 1])
             #x0[i] = torch.sqrt(1 - a_) * x0[i] + torch.sqrt(a_) * torch.randn_like(x0[i])
+            PEs.append(None)
 
-            if self.pos_embedding_version in ["v0", "v1"]:
-                pos = np.arange(x0[i].size(1), dtype=np.float32) / x0[i].size(1)
-                PE = torch.from_numpy(
-                    get_1d_sincos_pos_embed_from_grid(self.hidden_size, pos)
-                    ).unsqueeze(dim=0).clone().to(x.device).float()
-
-                PE = fourier_positional_encoding(p_, self.hidden_size)
-                #positions[i] = torch.sqrt(1 - a_) * positions[i] + torch.sqrt(a_) * torch.randn_like(positions[i])
-                PE = torch.sqrt(1 - a_) * PE + torch.sqrt(a_) * torch.randn_like(PE)
-
-                PEs.append(PE)
-            else:
-                PEs.append(None)
+        if self.level_num > 0:
+            pos = np.arange(8, dtype=np.float32) / 8.0
+            PE = torch.from_numpy(
+                get_1d_sincos_pos_embed_from_grid(self.hidden_size, pos)
+                ).unsqueeze(dim=0).clone().to(x.device).float()
+            PE = PE.repeat(1, L // 8, 1)
 
         # Embed conditions and timesteps
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding
@@ -538,8 +533,8 @@ class DiT(nn.Module):
 
         x = self.input_layer(x)
         ## -1 means using the nearest level GT positions as the positional encoding
-        if len(PEs) > 0 and self.pos_embedding_version != "v2":
-            x = x + PEs[-1]
+        if self.level_num > 0:
+            x = x + PE
 
         for block in self.blocks:
             x = block(x, c, x0, a_out)                      # (N, L, D)
