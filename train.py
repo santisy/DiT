@@ -168,11 +168,10 @@ def main(args):
     edm_flag = config.model.get("use_EDM", False)
 
     if level_num == 2:
-        hidden_size = 1024
         in_ch = int(m ** 3)
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
-        in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
+        in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
     elif level_num == 0: # Root positions and scales
         in_ch = 4
 
@@ -255,11 +254,11 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x0, _, x2, p0, _, p2, y in loader:
+        for x0, x1, p0, _, y in loader:
 
             x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
-            x1 = x2[:, :, m ** 3:].clone().to(device)
-            x2 = x2[:, :, :m ** 3].clone().to(device)
+            x1 = x1[:, :, m ** 3:].clone().to(device)
+            x2 = x1[:, :, :m ** 3].clone().to(device)
 
             p2 = p2.to(device)
             y = y.to(device)
