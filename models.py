@@ -383,12 +383,13 @@ class DiT(nn.Module):
         num_classes=1000,
         aligned_gen=False,
         pos_embedding_version="v1",
-        level_num=0
+        level_num=0,
+        sibling_num=8
     ):
         super().__init__()
         self.hidden_size = hidden_size
 
-        self.sibling_num = sibling_num = 8 # Octree
+        self.sibling_num = sibling_num # How many to pack
         self.learn_sigma = learn_sigma
         self.in_channels = in_channels
         self.out_channels = in_channels * 2 if learn_sigma else in_channels
@@ -513,11 +514,13 @@ class DiT(nn.Module):
             PEs.append(None)
 
         if self.level_num > 0:
-            pos = np.arange(8, dtype=np.float32) / 8.0
+            g = self.sibling_num
+            p_l = 8 // int(g)
+            pos = np.arange(p_l, dtype=np.float32) / float(p_l)
             PE = torch.from_numpy(
                 get_1d_sincos_pos_embed_from_grid(self.hidden_size, pos)
                 ).unsqueeze(dim=0).clone().to(x.device).float()
-            PE = PE.repeat(1, L // 8, 1)
+            PE = PE.repeat(1, L // p_l, 1)
 
         # Embed conditions and timesteps
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding

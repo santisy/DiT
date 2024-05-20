@@ -166,6 +166,7 @@ def main(args):
     depth = config.model.depth
     hidden_size = config.model.hidden_sizes[level_num]
     edm_flag = config.model.get("use_EDM", False)
+    sibling_num = config.model.get("sibling_num", 2)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -191,9 +192,10 @@ def main(args):
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
-        aligned_gen=False,
+        aligned_gen=True if level_num > 0 else False,
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
-        level_num=level_num
+        level_num=level_num,
+        sibling_num=sibling_num
     ).to(device)
     if edm_flag:
         print("\033[92mUse EDM.\033[00m")
@@ -278,6 +280,7 @@ def main(args):
             elif level_num == 2:
                 x = x2
                 B, L, C = x1.shape
+                x1 = x1.reshape(B, L // sibling_num, -1)
                 xc = [x0, x1]
                 a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),
                      torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device)
