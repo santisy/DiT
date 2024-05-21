@@ -158,7 +158,7 @@ def main(args):
 
     # Create dataset
     dataset = OFLAGDataset(args.data_root, **config.data)
-    in_ch = dataset.get_level_vec_len(2)
+    in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
     # Arch variables

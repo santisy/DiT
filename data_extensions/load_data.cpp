@@ -9,10 +9,95 @@
 #include <vector>
 #include <fstream>
 #include <string>
+#include <cmath>
 
 #include <torch/extension.h>
 
 namespace fs = std::filesystem;
+
+struct Quaternion {
+    float w, x, y, z;
+};
+
+// Function to compute the cross product of two vectors
+void crossProduct(const float v1[3], const float v2[3], float result[3]) {
+    result[0] = v1[1] * v2[2] - v1[2] * v2[1];
+    result[1] = v1[2] * v1[0] - v1[0] * v2[2];
+    result[2] = v1[0] * v2[1] - v1[1] * v2[0];
+}
+
+// Function to convert a rotation matrix to a quaternion
+Quaternion rotationMatrixToQuaternion(const float mat[6]) {
+    // Compute the third row using cross product
+    float r3[3];
+    crossProduct(mat, mat + 3, r3);
+
+    // Assemble the full rotation matrix
+    float fullMat[9] = {
+        mat[0], mat[1], mat[2],
+        mat[3], mat[4], mat[5],
+        r3[0], r3[1], r3[2]
+    };
+
+    // Compute the trace of the matrix
+    float trace = fullMat[0] + fullMat[4] + fullMat[8];
+
+    Quaternion q;
+    if (trace > 0) {
+        float s = 0.5f / std::sqrt(trace + 1.0f);
+        q.w = 0.25f / s;
+        q.x = (fullMat[7] - fullMat[5]) * s;
+        q.y = (fullMat[2] - fullMat[6]) * s;
+        q.z = (fullMat[3] - fullMat[1]) * s;
+    } else {
+        if (fullMat[0] > fullMat[4] && fullMat[0] > fullMat[8]) {
+            float s = 2.0f * std::sqrt(1.0f + fullMat[0] - fullMat[4] - fullMat[8]);
+            q.w = (fullMat[7] - fullMat[5]) / s;
+            q.x = 0.25f * s;
+            q.y = (fullMat[1] + fullMat[3]) / s;
+            q.z = (fullMat[2] + fullMat[6]) / s;
+        } else if (fullMat[4] > fullMat[8]) {
+            float s = 2.0f * std::sqrt(1.0f + fullMat[4] - fullMat[0] - fullMat[8]);
+            q.w = (fullMat[2] - fullMat[6]) / s;
+            q.x = (fullMat[1] + fullMat[3]) / s;
+            q.y = 0.25f * s;
+            q.z = (fullMat[5] + fullMat[7]) / s;
+        } else {
+            float s = 2.0f * std::sqrt(1.0f + fullMat[8] - fullMat[0] - fullMat[4]);
+            q.w = (fullMat[3] - fullMat[1]) / s;
+            q.x = (fullMat[2] + fullMat[6]) / s;
+            q.y = (fullMat[5] + fullMat[7]) / s;
+            q.z = 0.25f * s;
+        }
+    }
+
+    return q;
+}
+
+// Function to convert a quaternion to a rotation matrix
+void quaternionToRotationMatrix(const Quaternion& q, float mat[9]) {
+    float w = q.w, x = q.x, y = q.y, z = q.z;
+
+    mat[0] = 1 - 2*y*y - 2*z*z;
+    mat[1] = 2*x*y - 2*z*w;
+    mat[2] = 2*x*z + 2*y*w;
+
+    mat[3] = 2*x*y + 2*z*w;
+    mat[4] = 1 - 2*x*x - 2*z*z;
+    mat[5] = 2*y*z - 2*x*w;
+
+    mat[6] = 2*x*z - 2*y*w;
+    mat[7] = 2*y*z + 2*x*w;
+    mat[8] = 1 - 2*x*x - 2*y*y;
+}
+
+void normalizeQuaternion(Quaternion& q) {
+    float norm = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+    q.w /= norm;
+    q.x /= norm;
+    q.y /= norm;
+    q.z /= norm;
+}
 
 std::vector<std::string> simpleGlob(const fs::path& search_path, const std::string& regex_pattern) {
     std::vector<std::string> matched_files;
@@ -77,22 +162,14 @@ void loadFromFile(std::ifstream& file,
 
         // Do the angular encoding conversion
         data = data + 7 * 7 * 7 + 2;
-        float theta1 = atan2(data[1], data[0]);
-        float phi1 = atan2(sqrtf(data[0] * data[0] + data[1] * data[1]), data[2]);
-        float theta2 = atan2(data[4], data[3]);
-        float phi2 = atan2(sqrtf(data[3] * data[3] + data[4] * data[4]), data[5]);
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7}, sinf(theta1));
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 1}, cosf(theta1));
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 2}, sinf(phi1));
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 3}, cosf(phi1));
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 4}, sinf(theta2));
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 5}, cosf(theta2));
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 6}, sinf(phi2));
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 7}, cosf(phi2));
-
+        Quaternion q = rotationMatrixToQuaternion(data);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7}, q.w);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 1}, q.x);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 2}, q.y);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 3}, q.z);
 
         // Copy the rest
-        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(7 * 7 * 7 + 8, at::indexing::None)},
+        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(7 * 7 * 7 + 4, at::indexing::None)},
                        nodeVec.index({at::indexing::Slice(7 * 7 * 7 + 6, at::indexing::None)}));
 
         delete[] dataPtr;
@@ -138,22 +215,15 @@ void loadFromFileAndAssignPos(std::ifstream& file,
 
         // Do the angular encoding conversion
         data = data + 5 * 5 * 5 + 2;
-        float theta1 = atan2(data[1], data[0]);
-        float phi1 = atan2(sqrtf(data[0] * data[0] + data[1] * data[1]), data[2]);
-        float theta2 = atan2(data[4], data[3]);
-        float phi2 = atan2(sqrtf(data[3] * data[3] + data[4] * data[4]), data[5]);
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5}, sinf(theta1));
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 1}, cosf(theta1));
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 2}, sinf(phi1));
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 3}, cosf(phi1));
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 4}, sinf(theta2));
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 5}, cosf(theta2));
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 6}, sinf(phi2));
-        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 7}, cosf(phi2));
+        Quaternion q = rotationMatrixToQuaternion(data);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7}, q.w);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 1}, q.x);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 2}, q.y);
+        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 3}, q.z);
 
 
         // Copy the rest
-        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(5 * 5 * 5 + 8, at::indexing::None)},
+        out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(5 * 5 * 5 + 4, at::indexing::None)},
                        nodeVec.index({at::indexing::Slice(5 * 5 * 5 + 6, at::indexing::None)}));
 
         delete[] dataPtr;
@@ -176,8 +246,8 @@ std::vector<at::Tensor> readAndConstruct(std::string inputPath,
     length1 = static_cast<int>(length1f);
 
     // The deducted 2 are the tree topology indicators (parent ID and children ID)
-    at::Tensor level0Tensor = at::zeros({octreeRootNum, level0UnitLength});
-    at::Tensor level1Tensor = at::zeros({octreeRootNum * 8, level1UnitLength});
+    at::Tensor level0Tensor = at::zeros({octreeRootNum, level0UnitLength - 4});
+    at::Tensor level1Tensor = at::zeros({octreeRootNum * 8, level1UnitLength - 4});
 
     // Positions
     at::Tensor level1Positions = at::zeros({octreeRootNum * 8, 3});
@@ -227,15 +297,22 @@ at::Tensor angularBack(at::Tensor inputVec, const int M){
                     inputVec.index({at::indexing::Slice(at::indexing::None, M * M * M)}));
     
     int i = M * M * M;
-    out[i] = inputVec[i + 2] * inputVec[i + 1];
-    out[i + 1] = inputVec[i + 2] * inputVec[i];
-    out[i + 2] = inputVec[i + 3];
-    out[i + 3] = inputVec[i + 6] * inputVec[i + 5];
-    out[i + 4] = inputVec[i + 6] * inputVec[i + 4];
-    out[i + 5] = inputVec[i + 7];
+    float rotMat[9];
+    Quaternion q;
+    q.w = inputVec[i].item<float>();
+    q.x = inputVec[i + 1].item<float>();
+    q.y = inputVec[i + 2].item<float>();
+    q.z = inputVec[i + 3].item<float>();
+    quaternionToRotationMatrix(q, rotMat);
+    out[i] = rotMat[0];
+    out[i + 1] = rotMat[1];
+    out[i + 2] = rotMat[2];
+    out[i + 3] = rotMat[3];
+    out[i + 4] = rotMat[4];
+    out[i + 5] = rotMat[5];
 
     out.index_put_({at::indexing::Slice(M * M * M + 6, at::indexing::None)},
-                    inputVec.index({at::indexing::Slice(M * M * M + 8, at::indexing::None)}));
+                    inputVec.index({at::indexing::Slice(M * M * M + 4, at::indexing::None)}));
     return out;
 }
 
@@ -256,7 +333,7 @@ void dumpToBin(std::string outPath,
         if (at::sum(at::abs(level0.index({i, at::indexing::Slice(-18, -10)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l0_out_with_pc = at::zeros({level0.size(1)});
+        at::Tensor l0_out_with_pc = at::zeros({level0.size(1) + 4});
         l0_out_with_pc[0] = i; // Children index
         l0_out_with_pc[1] = -1;
         l0_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level0.index({i}), 7));
@@ -267,7 +344,7 @@ void dumpToBin(std::string outPath,
         if (at::sum(at::abs(level1.index({i, at::indexing::Slice(-14, -6)}))).item().toFloat() < 1.0f){
             continue;
         }
-        at::Tensor l1_out_with_pc = at::zeros({level1.size(1)});
+        at::Tensor l1_out_with_pc = at::zeros({level1.size(1) + 4});
         l1_out_with_pc[0] = i % 8 ; // Children index
         l1_out_with_pc[1] = i / 8;
         l1_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level1.index({i}), 5));
@@ -280,10 +357,10 @@ void dumpToBin(std::string outPath,
     file.write(reinterpret_cast<const char*>(&length1f), sizeof(float));
 
     for (auto &t: level0_out){
-        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level0.size(1)));
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level0.size(1) + 4));
     }
     for (auto &t: level1_out){
-        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level1.size(1)));
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level1.size(1) + 4));
     }
 
     file.close();
