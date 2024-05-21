@@ -66,13 +66,13 @@ class OFLAGDataset(Dataset):
         else:
             raise ValueError(f"Invalid level number {level_num}.")
     
-    def get_condition_dim(self, level_num):
+    def get_condition_dim(self, level_num, sibling_num=2):
         if level_num == 0:
             return []
         elif level_num == 1:
             return [4,]
         elif level_num == 2:
-            return [4, 14]
+            return [4, 14 * sibling_num]
         else:
             raise ValueError(f"Invalid level number {level_num}.")
 

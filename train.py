@@ -182,7 +182,7 @@ def main(args):
         in_channels=in_ch, # Combine to each children
         num_classes=config.data.num_classes,
         condition_node_num=dataset.get_condition_num(level_num),
-        condition_node_dim=dataset.get_condition_dim(level_num),
+        condition_node_dim=dataset.get_condition_dim(level_num, sibling_num),
         # Network itself related
         hidden_size=hidden_size, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,
