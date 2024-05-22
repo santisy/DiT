@@ -92,11 +92,11 @@ void quaternionToRotationMatrix(const Quaternion& q, float mat[9]) {
 }
 
 void normalizeQuaternion(Quaternion& q) {
-    float norm = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
-    q.w /= norm;
-    q.x /= norm;
-    q.y /= norm;
-    q.z /= norm;
+    float rnorm = (std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z) + 1e-6f);
+    q.w *= rnorm;
+    q.x *= rnorm;
+    q.y *= rnorm;
+    q.z *= rnorm;
 }
 
 std::vector<std::string> simpleGlob(const fs::path& search_path, const std::string& regex_pattern) {
@@ -303,6 +303,7 @@ at::Tensor angularBack(at::Tensor inputVec, const int M){
     q.x = inputVec[i + 1].item<float>();
     q.y = inputVec[i + 2].item<float>();
     q.z = inputVec[i + 3].item<float>();
+    normalizeQuaternion(q);
     quaternionToRotationMatrix(q, rotMat);
     out[i] = rotMat[0];
     out[i + 1] = rotMat[1];
