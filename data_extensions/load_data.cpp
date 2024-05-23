@@ -27,7 +27,7 @@ void crossProduct(const float v1[3], const float v2[3], float result[3]) {
 }
 
 // Function to convert a rotation matrix to a quaternion
-Quaternion rotationMatrixToQuaternion(const float mat[6]) {
+Quaternion rotationMatrixToQuaternion(const float *mat) {
     // Compute the third row using cross product
     float r3[3];
     crossProduct(mat, mat + 3, r3);
@@ -78,17 +78,17 @@ Quaternion rotationMatrixToQuaternion(const float mat[6]) {
 void quaternionToRotationMatrix(const Quaternion& q, float mat[9]) {
     float w = q.w, x = q.x, y = q.y, z = q.z;
 
-    mat[0] = 1 - 2*y*y - 2*z*z;
-    mat[1] = 2*x*y - 2*z*w;
-    mat[2] = 2*x*z + 2*y*w;
+    mat[0] = 1 - 2 * y * y - 2 * z * z;
+    mat[1] = 2 * x * y - 2 * z * w;
+    mat[2] = 2 * x * z + 2 * y * w;
 
-    mat[3] = 2*x*y + 2*z*w;
-    mat[4] = 1 - 2*x*x - 2*z*z;
-    mat[5] = 2*y*z - 2*x*w;
+    mat[3] = 2 * x * y + 2 * z * w;
+    mat[4] = 1 - 2 * x * x - 2 * z * z;
+    mat[5] = 2 * y * z - 2 * x * w;
 
-    mat[6] = 2*x*z - 2*y*w;
-    mat[7] = 2*y*z + 2*x*w;
-    mat[8] = 1 - 2*x*x - 2*y*y;
+    mat[6] = 2 * x * z - 2 * y * w;
+    mat[7] = 2 * y * z + 2 * x * w;
+    mat[8] = 1 - 2 * x * x - 2 * y * y;
 }
 
 void normalizeQuaternion(Quaternion& q) {
