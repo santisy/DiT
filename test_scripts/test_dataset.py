@@ -1,9 +1,9 @@
 import sys
-from data_extensions import load_utils
 sys.path.insert(0, ".")
+from data_extensions import load_utils
 from data.ofalg_dataset import OFLAGDataset
 
-dataset = OFLAGDataset("datasets/shapenet_airplane")
+dataset = OFLAGDataset("datasets/shapenet_airplane_l1only", octree_root_num=256)
 x0, x1, _, _, _ = dataset[0]
 print(x0.shape)
 print(x1.shape)

@@ -107,8 +107,8 @@ class OFLAGDataset(Dataset):
             j = 0
             x[:, j:j + 5 ** 3] = x[:, j:j + 5 ** 3] * (self._stats[f"grid_{l}_max"] - self._stats[f"grid_{l}_min"]) + self._stats[f"grid_{l}_min"]
             j += 5 ** 3
-            x[:, j:j + 8] = x[:, j:j + 8] * 2.0 - 1.0
-            j += 8
+            x[:, j:j + 4] = x[:, j:j + 4] * 2.0 - 1.0
+            j += 4
             x[:, j:j + 3] = x[:, j:j + 3] * (self._stats[f"rel_half_s_{l}_max"] - self._stats[f"rel_half_s_{l}_min"]) + self._stats[f"rel_half_s_{l}_min"]
             j += 3
             x[:, j:j + 3] = x[:, j:j + 3] * (self._stats[f"rel_p_{l}_max"] - self._stats[f"rel_p_{l}_min"]) + self._stats[f"rel_p_{l}_min"]
@@ -142,6 +142,7 @@ class OFLAGDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.file_paths[idx]
+        print(file_path)
         level0_tensor, level1_tensor, \
         level0_position, level1_position \
             = load_utils.load(file_path,

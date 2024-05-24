@@ -22,7 +22,7 @@ struct Quaternion {
 // Function to compute the cross product of two vectors
 void crossProduct(const float v1[3], const float v2[3], float result[3]) {
     result[0] = v1[1] * v2[2] - v1[2] * v2[1];
-    result[1] = v1[2] * v1[0] - v1[0] * v2[2];
+    result[1] = v1[2] * v2[0] - v1[0] * v2[2];
     result[2] = v1[0] * v2[1] - v1[1] * v2[0];
 }
 
@@ -92,7 +92,7 @@ void quaternionToRotationMatrix(const Quaternion& q, float mat[9]) {
 }
 
 void normalizeQuaternion(Quaternion& q) {
-    float rnorm = (std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z) + 1e-6f);
+    float rnorm = 1.0f / (std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z) + 1e-6f);
     q.w *= rnorm;
     q.x *= rnorm;
     q.y *= rnorm;
@@ -156,6 +156,13 @@ void loadFromFile(std::ifstream& file,
         int currentIdx = static_cast<int>(data[0]);
         at::Tensor nodeVec = at::from_blob(data + 2, {unitLength - 2}).clone();
 
+        float rhs0 = *(data + 2 + 7 * 7 * 7 + 6);
+        float rhs1 = *(data + 2 + 7 * 7 * 7 + 6 + 1);
+        float rhs2 = *(data + 2 + 7 * 7 * 7 + 6 + 2);
+        if (rhs0 > sqrtf(2) && rhs1 > sqrtf(2) && rhs2 > sqrtf(2) && rhs0 == rhs1 && rhs1 == rhs2){
+            continue;
+        }
+
         // Load grid values         
         out.index_put_({parentIdx * 8 + currentIdx, at::indexing::Slice(at::indexing::None, 7 * 7 * 7)},
                        nodeVec.index({at::indexing::Slice(at::indexing::None, 7 * 7 * 7)}));
@@ -206,6 +213,13 @@ void loadFromFileAndAssignPos(std::ifstream& file,
         outPos.index_put_({outIdx, 1}, prevPos.index({parentIdx, 1}) - scale + scale * 0.95f * yIdx + absoluteScale / 2.0f);
         outPos.index_put_({outIdx, 2}, prevPos.index({parentIdx, 2}) - scale + scale * 0.95f * zIdx + absoluteScale / 2.0f);
 
+        float rhs0 = *(data + 2 + 5 * 5 * 5 + 6);
+        float rhs1 = *(data + 2 + 5 * 5 * 5 + 6 + 1);
+        float rhs2 = *(data + 2 + 5 * 5 * 5 + 6 + 2);
+        if (rhs0 > sqrtf(2) && rhs1 > sqrtf(2) && rhs2 > sqrtf(2) && rhs0 == rhs1 && rhs1 == rhs2){
+            continue;
+        }
+
         at::Tensor nodeVec = at::from_blob(data + 2, {unitLength - 2}).clone();
         //out.index_put_({outIdx, at::indexing::Slice()}, nodeVec);
 
@@ -216,10 +230,10 @@ void loadFromFileAndAssignPos(std::ifstream& file,
         // Do the angular encoding conversion
         data = data + 5 * 5 * 5 + 2;
         Quaternion q = rotationMatrixToQuaternion(data);
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7}, q.w);
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 1}, q.x);
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 2}, q.y);
-        out.index_put_({parentIdx * 8 + currentIdx, 7 * 7 * 7 + 3}, q.z);
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5}, q.w);
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 1}, q.x);
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 2}, q.y);
+        out.index_put_({parentIdx * 8 + currentIdx, 5 * 5 * 5 + 3}, q.z);
 
 
         // Copy the rest
@@ -292,7 +306,7 @@ at::Tensor deducePositionFromSample(at::Tensor preScales,
 }
 
 at::Tensor angularBack(at::Tensor inputVec, const int M){
-    at::Tensor out = at::zeros({inputVec.numel() - 2});
+    at::Tensor out = at::zeros({inputVec.numel() + 2});
     out.index_put_({at::indexing::Slice(at::indexing::None, M * M * M)},
                     inputVec.index({at::indexing::Slice(at::indexing::None, M * M * M)}));
     
@@ -331,7 +345,7 @@ void dumpToBin(std::string outPath,
     // TODO: Here is some bug
 
     for (int i = 0; i < octreeRootNum; i++){
-        if (at::sum(at::abs(level0.index({i, at::indexing::Slice(-18, -10)}))).item().toFloat() < 1.0f){
+        if (at::sum(at::pow(level0.index({i, at::indexing::Slice(-14, -10)}), 2)).item().toFloat() < 0.7f){
             continue;
         }
         at::Tensor l0_out_with_pc = at::zeros({level0.size(1) + 4});
@@ -342,7 +356,7 @@ void dumpToBin(std::string outPath,
     }
 
     for (int i = 0; i < octreeRootNum * 8; i++){
-        if (at::sum(at::abs(level1.index({i, at::indexing::Slice(-14, -6)}))).item().toFloat() < 1.0f){
+        if (at::sum(at::pow(level1.index({i, at::indexing::Slice(-10, -6)}), 2)).item().toFloat() < 0.7f){
             continue;
         }
         at::Tensor l1_out_with_pc = at::zeros({level1.size(1) + 4});
