@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a100:1
-#SBATCH --job-name="l2_0525"
+#SBATCH --job-name="l1_0525"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # list out some useful information (optional)
@@ -48,7 +48,7 @@ srun torchrun \
     --nproc_per_node=$SLURM_NTASKS_PER_NODE \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train.py --exp-id l2_0525 \
+train.py --exp-id l1_0525 \
     --epoch 4000 \
     --global-batch-size 96 \
     --config-file configs/OFALG_config_v7_nl_small.yaml \
@@ -56,4 +56,4 @@ train.py --exp-id l2_0525 \
     --num-workers 32 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
-    --level-num 2
+    --level-num 1
