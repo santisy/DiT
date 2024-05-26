@@ -256,13 +256,12 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x0, x1, p0, _, y in loader:
+        for x0_raw, x1_raw, p0, _, y in loader:
 
-            x0 = torch.cat([x0[:, :, -7].unsqueeze(dim=-1), x0[:, :, -3:]], dim=-1).to(device)
-            x1 = x1[:, :, m ** 3:].clone().to(device)
-            x2 = x1[:, :, :m ** 3].clone().to(device)
+            x0 = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).to(device)
+            x1 = x1_raw[:, :, m ** 3:].clone().to(device)
+            x2 = x1_raw[:, :, :m ** 3].clone().to(device)
 
-            p2 = p2.to(device)
             y = y.to(device)
 
             # According to the level_num set the training target x and the conditions
@@ -275,15 +274,15 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),]
+                a = [torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // sibling_num, -1)
                 xc = [x0, x1]
-                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),
-                     torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device)
+                a = [torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device),
+                     torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device)
                     ]
                 positions = [None, None]
 

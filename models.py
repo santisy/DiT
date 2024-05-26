@@ -520,7 +520,7 @@ class DiT(nn.Module):
             PE = torch.from_numpy(
                 get_1d_sincos_pos_embed_from_grid(self.hidden_size, pos)
                 ).unsqueeze(dim=0).clone().to(x.device).float()
-            PE = PE.repeat(1, L // p_l, 1)
+            PE = PE.repeat(1, L // g // p_l, 1)
 
         # Embed conditions and timesteps
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding

@@ -142,7 +142,6 @@ class OFLAGDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.file_paths[idx]
-        print(file_path)
         level0_tensor, level1_tensor, \
         level0_position, level1_position \
             = load_utils.load(file_path,
