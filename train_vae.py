@@ -13,6 +13,7 @@ import math
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -29,7 +30,7 @@ import os
 import shutil
 import json
 
-from vae_model import VAE, VAELinear, loss_function
+from vae_model import VAE, loss_function
 
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
@@ -229,6 +230,7 @@ def main(args):
         for _, _, x2, _, _, _, _ in loader:
 
             x2 = random_sample_and_reshape(x2.to(device), 512, m, zero_ratio=None)
+            x2 = F.pad(x2, (0, 3), "constant", 0)
 
             x_list = [x2,]
 
