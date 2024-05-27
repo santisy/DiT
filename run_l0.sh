@@ -15,8 +15,8 @@ echo "SLURMTMPDIR="$SLURM_TMPDIR
 echo "working directory = "$SLURM_SUBMIT_DIR
 
 # Source the environment, load everything here
-unset LD_LIBRARY_PATH
 source ~/.bashrc
+unset LD_LIBRARY_PATH
 source ~/DiT/bin/activate
 
 # Set master address and port
@@ -30,7 +30,7 @@ WORK_DIR=$(pwd)
 DATA_ZIP_PATH=./datasets/shapenet_airplane_l1only.zip
 DATA_ZIP_FILE=$(basename ${DATA_ZIP_PATH})
 cp $DATA_ZIP_PATH $SLURM_TMPDIR
-cd $SLURM_TMPDIR && unzip $DATA_ZIP_FILE && rm $DATA_ZIP_FILE
+cd $SLURM_TMPDIR && unzip -q $DATA_ZIP_FILE && rm $DATA_ZIP_FILE
 cd $WORK_DIR
 
 # Run the PyTorch distributed job
