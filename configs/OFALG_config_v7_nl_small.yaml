@@ -21,8 +21,10 @@ diffusion:
 
 vae:
     layer_n: 6
-    in_ch: 64
-    latent_ch: 128
+    in_ch: 128
+    latent_ch: 1
     latent_ratio: 4
     quant_code_n: 1024
+    downsample_n: 3
+    kl_flag: true
     linear: false

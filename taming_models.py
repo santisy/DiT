@@ -68,7 +68,10 @@ class VectorQuantizer2(nn.Module):
         assert rescale_logits==False, "Only for interface compatible with Gumbel"
         assert return_logits==False, "Only for interface compatible with Gumbel"
         # reshape z -> (batch, height, width, channel) and flatten
-        z = rearrange(z, 'b c h w d -> b h w d c').contiguous()
+        if z.ndim == 5: 
+            z = rearrange(z, 'b c h w d -> b h w d c').contiguous()
+        elif z.ndim == 3:
+            z = rearrange(z, 'b c d -> b d c').contiguous()
         z_flattened = z.view(-1, self.e_dim)
         # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
 
@@ -94,8 +97,10 @@ class VectorQuantizer2(nn.Module):
         z_q = z + (z_q - z).detach()
 
         # reshape back to match original input shape
-        z_q = rearrange(z_q, 'b h w d c -> b c h w d').contiguous()
-
+        if z.ndim == 5:
+            z_q = rearrange(z_q, 'b h w d c -> b c h w d').contiguous()
+        elif z.ndim == 3:
+            z_q = rearrange(z_q, 'b d c -> b c d').contiguous()
         if self.remap is not None:
             min_encoding_indices = min_encoding_indices.reshape(z.shape[0],-1) # add batch axis
             min_encoding_indices = self.remap_to_used(min_encoding_indices)
@@ -162,6 +167,45 @@ class Upsample(nn.Module):
             self.conv = torch.nn.ConvTranspose3d(in_channels,
                                                  in_channels,
                                                  kernel_size=3,
+                                                 stride=1,
+                                                 padding=1)
+
+    def forward(self, x):
+        x = torch.nn.functional.interpolate(x, scale_factor=2.0, mode="nearest")
+        if self.with_conv:
+            x = self.conv(x)
+        return x
+
+
+class Downsample(nn.Module):
+    def __init__(self, in_channels, with_conv):
+        super().__init__()
+        self.with_conv = with_conv
+        if self.with_conv:
+            # no asymmetric padding in torch conv, must do it ourselves
+            self.conv = torch.nn.Conv3d(in_channels,
+                                        in_channels,
+                                        kernel_size=3,
+                                        stride=2,
+                                        padding=0)
+
+    def forward(self, x):
+        if self.with_conv:
+            pad = (0,1,0,1,0,1)
+            x = torch.nn.functional.pad(x, pad, mode="constant", value=0)
+            x = self.conv(x)
+        else:
+            x = torch.nn.functional.avg_pool3d(x, kernel_size=2, stride=2)
+        return x
+
+class Upsample2(nn.Module):
+    def __init__(self, in_channels, with_conv):
+        super().__init__()
+        self.with_conv = with_conv
+        if self.with_conv:
+            self.conv = torch.nn.ConvTranspose3d(in_channels,
+                                                 in_channels,
+                                                 kernel_size=3,
                                                  stride=2,
                                                  padding=1)
 
@@ -172,7 +216,7 @@ class Upsample(nn.Module):
         return x
 
 
-class Downsample(nn.Module):
+class Downsample2(nn.Module):
     def __init__(self, in_channels, with_conv):
         super().__init__()
         self.with_conv = with_conv
@@ -193,10 +237,53 @@ class Downsample(nn.Module):
             x = torch.nn.functional.avg_pool3d(x, kernel_size=2, stride=2)
         return x
 
+class Upsample3(nn.Module):
+    def __init__(self, in_channels, with_conv):
+        super().__init__()
+        self.with_conv = with_conv
+        if self.with_conv:
+            self.conv = torch.nn.ConvTranspose1d(in_channels,
+                                                 in_channels,
+                                                 kernel_size=3,
+                                                 stride=1,
+                                                 padding=1)
+
+    def forward(self, x):
+        x = torch.nn.functional.interpolate(x, scale_factor=2.0, mode="nearest")
+        if self.with_conv:
+            x = self.conv(x)
+        return x
+
+
+class Downsample3(nn.Module):
+    def __init__(self, in_channels, with_conv):
+        super().__init__()
+        self.with_conv = with_conv
+        if self.with_conv:
+            # no asymmetric padding in torch conv, must do it ourselves
+            self.conv = torch.nn.Conv1d(in_channels,
+                                        in_channels,
+                                        kernel_size=3,
+                                        stride=2,
+                                        padding=0)
+
+    def forward(self, x):
+        if self.with_conv:
+            pad = (0,1)
+            x = torch.nn.functional.pad(x, pad, mode="constant", value=0)
+            x = self.conv(x)
+        else:
+            x = torch.nn.functional.avg_pool3d(x, kernel_size=2, stride=2)
+        return x
+
 
 class ResnetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels=None, conv_shortcut=False,
-                 dropout=False):
+    def __init__(self, in_channels,
+                 out_channels=None,
+                 conv_shortcut=False,
+                 dropout=False,
+                 conv=torch.nn.Conv3d
+                 ):
         super().__init__()
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
@@ -204,31 +291,31 @@ class ResnetBlock(nn.Module):
         self.use_conv_shortcut = conv_shortcut
 
         self.norm1 = Normalize(in_channels)
-        self.conv1 = torch.nn.Conv3d(in_channels,
-                                     out_channels,
-                                     kernel_size=3,
-                                     stride=1,
-                                     padding=1)
+        self.conv1 = conv(in_channels,
+                          out_channels,
+                          kernel_size=3,
+                          stride=1,
+                          padding=1)
         self.norm2 = Normalize(out_channels)
         self.dropout = torch.nn.Dropout(dropout)
-        self.conv2 = torch.nn.Conv3d(out_channels,
-                                     out_channels,
-                                     kernel_size=3,
-                                     stride=1,
-                                     padding=1)
+        self.conv2 = conv(out_channels,
+                          out_channels,
+                          kernel_size=3,
+                          stride=1,
+                          padding=1)
         if self.in_channels != self.out_channels:
             if self.use_conv_shortcut:
-                self.conv_shortcut = torch.nn.Conv3d(in_channels,
-                                                     out_channels,
-                                                     kernel_size=3,
-                                                     stride=1,
-                                                     padding=1)
+                self.conv_shortcut = conv(in_channels,
+                                          out_channels,
+                                          kernel_size=3,
+                                          stride=1,
+                                          padding=1)
             else:
-                self.nin_shortcut = torch.nn.Conv3d(in_channels,
-                                                    out_channels,
-                                                    kernel_size=1,
-                                                    stride=1,
-                                                    padding=0)
+                self.nin_shortcut = conv(in_channels,
+                                         out_channels,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0)
 
     def forward(self, x):
         h = x

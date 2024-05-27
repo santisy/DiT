@@ -96,8 +96,9 @@ def random_sample_and_reshape(x, l, m, zero_ratio=None):
             assert zero_ratio < 1.0
             zero_num = int(l * zero_ratio)
             non_zero_num = l - zero_num
-            zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) == 4.0)[0]
-            non_zero_indices = torch.where(x[i, :, -14:-6].sum(dim=1) != 4.0)[0]
+            # TODO: fix this part
+            zero_indices = torch.where(x[i, :, -10:-6].sum(dim=1) == 4.0)[0]
+            non_zero_indices = torch.where(x[i, :, -10:-6].sum(dim=1) != 4.0)[0]
             out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
             out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
 
@@ -168,22 +169,15 @@ def main(args):
     for l in range(2, 3):
         in_ch = dataset.get_level_vec_len(l)
         m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        if not linear_flag:
-            print("\033[92mUse conv VAE.\033[00m")
-            model = VAE(config.vae.layer_n,
-                        config.vae.in_ch,
-                        config.vae.latent_ch,
-                        m,
-                        quant_code_n=config.vae.get("quant_code_n", 2048),
-                        quant_version=config.vae.get("quant_version", "v0"))
-        else:
-            in_ch = int(m ** 3)
-            latent_dim = in_ch // config.vae.latent_ratio
-            print("\033[92mUse linear VAE.\033[00m")
-            model = VAELinear(config.vae.layer_n,
-                              in_ch,
-                              in_ch * 16,
-                              latent_dim)
+        print("\033[92mUse conv VAE.\033[00m")
+        model = VAE(config.vae.layer_n,
+                    config.vae.in_ch,
+                    config.vae.latent_ch,
+                    m,
+                    quant_code_n=config.vae.get("quant_code_n", 2048),
+                    quant_version=config.vae.get("quant_version", "v0"),
+                    downsample_n=config.vae.get("downsample_n", 3),
+                    kl_flag=config.vae.get("kl_flag", False))
         
         ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
         requires_grad(ema, False)
@@ -234,14 +228,8 @@ def main(args):
         logger.info(f"Beginning epoch {epoch}...")
         for _, _, x2, _, _, _, _ in loader:
 
-            # To device
-            #x0 = random_sample_and_reshape(x0.to(device), 64)
-            #x1 = random_sample_and_reshape(x1.to(device), 256)
-            # Do not sample too much zero entries when training VAE
-            if not linear_flag:
-                x2 = random_sample_and_reshape(x2.to(device), 512, m, zero_ratio=0.1)
-            else:
-                x2 = random_sample_and_reshape(x2.to(device), 1024, m, zero_ratio=0.1)
+            x2 = random_sample_and_reshape(x2.to(device), 512, m, zero_ratio=None)
+
             x_list = [x2,]
 
             loss = 0
