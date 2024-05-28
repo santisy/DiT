@@ -63,7 +63,7 @@ def main(args):
                     quant_version=config.vae.get("quant_version", "v0"),
                     downsample_n=config.vae.get("downsample_n", 3),
                     kl_flag=config.vae.get("kl_flag", False))
-    vae_model.load_state_dict(vae_ckpt["model"][0])
+    vae_model.load_state_dict(vae_ckpt["ema"][0])
     vae_model = vae_model.to(device)
     vae_model_list.append(vae_model)
     online_variance_list.append(OnlineVariance(latent_dim))
@@ -86,10 +86,10 @@ def main(args):
             if args.inspect_recon:
                 x1_other = x1[:, :, m**3:]
                 x1 = x1[:, :, :m ** 3]
-                x1 = F.pad(x1, (0, 3), "constant", 0)
+                x1_padded = F.pad(x1, (0, 3), "constant", 0)
                 with torch.no_grad():
                     with autocast():
-                        indices = vae_model_list[0].get_normalized_indices(x1)
+                        indices = vae_model_list[0].get_normalized_indices(x1_padded)
                     indices = indices.float()
                     x1_rec = vae_model_list[0].decode_code(indices)
                 x1_rec = x1_rec[:, :, :m ** 3]
