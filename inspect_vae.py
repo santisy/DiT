@@ -53,7 +53,6 @@ def main(args):
     vae_ckpt = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-    in_ch = int(m ** 3)
     latent_dim = 16
     vae_model = VAE(config.vae.layer_n,
                     config.vae.in_ch,
