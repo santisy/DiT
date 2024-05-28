@@ -282,9 +282,10 @@ def main(args):
                     # Calculate validation error
                     val_loss = 0
                     for i in range(len(val_dataset)):
-                        _, _, x2, _, _, _, _ = val_dataset[i]
+                        _, x2, _, _, _ = val_dataset[i]
                         x2 = x2.unsqueeze(dim=0).to(device)
                         x2 = x2[:, :, :m ** 3]
+                        x2 = F.pad(x2, (0, 3), "constant", 0)
                         with torch.no_grad():
                             x2_rec, _, _ = ema_list[0](x2)
                             val_loss += (x2_rec - x2).abs().mean()
