@@ -103,7 +103,7 @@ def random_sample_and_reshape(x, l, m, zero_ratio=None):
             out.append(x[i, zero_indices[torch.randperm(zero_indices.numel())[:zero_num]], :])
             out.append(x[i, non_zero_indices[torch.randperm(non_zero_indices.numel())[:non_zero_num]], :])
 
-    out = torch.cat(out, dim=0).unsqueeze(dim=0)
+    out = torch.stack(out, dim=0)
     return out[:, :, :m ** 3].clone()
     
 #################################################################################
@@ -167,26 +167,26 @@ def main(args):
     ema_list = nn.ModuleList()
     linear_flag = config.vae.linear
 
-    for l in range(2, 3):
-        in_ch = dataset.get_level_vec_len(l)
-        m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-        print("\033[92mUse conv VAE.\033[00m")
-        model = VAE(config.vae.layer_n,
-                    config.vae.in_ch,
-                    config.vae.latent_ch,
-                    m,
-                    quant_code_n=config.vae.get("quant_code_n", 2048),
-                    quant_version=config.vae.get("quant_version", "v0"),
-                    downsample_n=config.vae.get("downsample_n", 3),
-                    kl_flag=config.vae.get("kl_flag", False))
-        
-        ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
-        requires_grad(ema, False)
-        ema_list.append(ema)
+    in_ch = dataset.get_level_vec_len(1)
+    m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+    print("\033[92mUse conv VAE.\033[00m")
+    model = VAE(config.vae.layer_n,
+                config.vae.in_ch,
+                config.vae.latent_ch,
+                m,
+                quant_code_n=config.vae.get("quant_code_n", 2048),
+                quant_version=config.vae.get("quant_version", "v0"),
+                downsample_n=config.vae.get("downsample_n", 3),
+                kl_flag=config.vae.get("kl_flag", False))
+    print(model)
+    
+    ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
+    requires_grad(ema, False)
+    ema_list.append(ema)
 
-        # Put DDP on this
-        model = DDP(model.to(device), device_ids=[rank])
-        model_list.append(model)
+    # Put DDP on this
+    model = DDP(model.to(device), device_ids=[rank])
+    model_list.append(model)
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model_list.parameters(), lr=0.0002)
@@ -227,9 +227,9 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for _, _, x2, _, _, _, _ in loader:
+        for _, x2, _, _, _ in loader:
 
-            x2 = random_sample_and_reshape(x2.to(device), 512, m, zero_ratio=None)
+            x2 = random_sample_and_reshape(x2.to(device), 256, m, zero_ratio=None)
             x2 = F.pad(x2, (0, 3), "constant", 0)
 
             x_list = [x2,]

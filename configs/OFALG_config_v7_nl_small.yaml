@@ -20,8 +20,8 @@ diffusion:
     diffusion_steps: 1000
 
 vae:
-    layer_n: 6
-    in_ch: 128
+    layer_n: 2
+    in_ch: 64
     latent_ch: 1
     latent_ratio: 4
     quant_code_n: 1024
