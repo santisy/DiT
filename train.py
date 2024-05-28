@@ -210,7 +210,7 @@ def main(args):
         model.load_state_dict(resume_ckpt["model"])
         ema.load_state_dict(resume_ckpt["ema"])
     requires_grad(ema, False)
-    model = DDP(model, device_ids=[rank])
+    model = DDP(model, device_ids=[device])
     logger.info(f"Diffusion model created.")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
