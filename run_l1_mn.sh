@@ -8,7 +8,7 @@
 #SBATCH --job-name="l1_0525"
 #SBATCH --output=./sbatch_logs/%j.log
 
-# list out some useful information (optional)
+# List out some useful information (optional)
 echo "SLURM_JOBID="$SLURM_JOBID
 echo "SLURM_JOB_NODELIST"=$SLURM_JOB_NODELIST
 echo "SLURM_NNODES"=$SLURM_NNODES
@@ -25,30 +25,48 @@ export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
 export MASTER_PORT=$( echo 2$(($RANDOM % 9000 + 1000)) )
 export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 
+# Increase NCCL timeout to prevent socket timeout errors
+export NCCL_SOCKET_TIMEOUT=3600
+export NCCL_IB_TIMEOUT=22  # Set Infiniband timeout
+export NCCL_DEBUG=INFO  # Enable NCCL debug logging
+
 # Copy data to local
 WORK_DIR=$(pwd)
 DATA_ZIP_PATH=./datasets/shapenet_airplane_l1only.zip
 DATA_ZIP_FILE=$(basename ${DATA_ZIP_PATH})
 
 # Use srun to copy data to each node's SLURM_TMPDIR
-srun --ntasks=$SLURM_NTASKS --ntasks-per-node=1 bash -c "
+srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 bash -c "
 cp $DATA_ZIP_PATH $SLURM_TMPDIR
 cd $SLURM_TMPDIR && unzip -q $DATA_ZIP_FILE && rm $DATA_ZIP_FILE
 cd $WORK_DIR
 "
 
 # Wait for all nodes to finish copying data
-srun --ntasks=$SLURM_NTASKS --ntasks-per-node=1 bash -c "echo Data copied."
+srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 bash -c "echo Data copied."
 
+# Ensure all environment variables are set correctly
+srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 bash -c "
+echo NODE: \$SLURM_NODEID
+echo MASTER_ADDR=\$MASTER_ADDR
+echo MASTER_PORT=\$MASTER_PORT
+echo WORLD_SIZE=\$WORLD_SIZE
+echo NCCL_SOCKET_TIMEOUT=\$NCCL_SOCKET_TIMEOUT
+echo NCCL_IB_TIMEOUT=\$NCCL_IB_TIMEOUT
+echo NCCL_DEBUG=\$NCCL_DEBUG
+"
 
 # Run the PyTorch distributed job
-srun torchrun \
+srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --nnodes=$SLURM_NNODES \
     --node_rank=$SLURM_NODEID \
     --nproc_per_node=$SLURM_NTASKS_PER_NODE \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train.py --exp-id l1_0525 \
+    --rdzv_id="$SLURM_JOBID" \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
+    train.py --exp-id l1_0525 \
     --epoch 4000 \
     --global-batch-size 96 \
     --config-file configs/OFALG_config_v7_nl_small.yaml \
