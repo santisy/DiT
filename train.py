@@ -12,6 +12,7 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -28,7 +29,9 @@ import os
 import shutil
 import json
 
+import numpy as np
 from models import DiT
+from vae_model import VAE
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import StepLR
 from torch.cuda.amp import GradScaler, autocast
@@ -168,8 +171,26 @@ def main(args):
     edm_flag = config.model.get("use_EDM", False)
     sibling_num = config.model.get("sibling_num", 2)
 
+    vae_std = None
+    vae_model = None
+
     if level_num == 2:
-        in_ch = int(m ** 3)
+        in_ch = 16
+        vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
+        vae_std_loaded = np.load(args.vae_std)
+        vae_std = torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device)
+        vae_model = VAE(config.vae.layer_n,
+                        config.vae.in_ch,
+                        config.vae.latent_ch,
+                        m,
+                        quant_code_n=config.vae.get("quant_code_n", 2048),
+                        quant_version=config.vae.get("quant_version", "v0"),
+                        downsample_n=config.vae.get("downsample_n", 3),
+                        kl_flag=config.vae.get("kl_flag", False))
+        vae_model.load_state_dict(vae_ckpt["model"][0])
+        vae_model = vae_model.to(device)
+        vae_model = vae_model.eval()
+
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
         in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
@@ -278,6 +299,17 @@ def main(args):
                 positions = [None,]
             elif level_num == 2:
                 x = x2
+                with torch.no_grad():
+                    x_list = []
+                    for x_ in torch.split(x, 4, dim=0):
+                        x_ = F.pad(x_, (0, 3), "constant", 0)
+                        with autocast():
+                            latent = vae_model.get_normalized_indices(x_)
+                        x_list.append(latent.float())
+                    x = torch.cat(x_list, dim=0).detach().float()
+                    x = x[:, :, :m ** 3]
+                    x = x / (vae_std + 1e-6)
+
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // sibling_num, -1)
                 xc = [x0, x1]
@@ -373,6 +405,10 @@ if __name__ == "__main__":
     parser.add_argument("--level-num", type=int, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
     parser.add_argument("--resume", type=str, default=None)
+
+    # VAE related
+    parser.add_argument("--vae-std", type=str, required=True)
+    parser.add_argument("--vae-ckpt", type=str, required=True)
 
     args = parser.parse_args()
     main(args)

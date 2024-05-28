@@ -228,6 +228,12 @@ class VAE(nn.Module):
         return self.output_fc(h)
 
     def decode_code(self, c: torch.Tensor):
+        if self.kl_flag:
+            B, L, C = c.shape
+            c = c.reshape(-1, 1, C)
+            out = self.decode(c)
+            return out.reshape(B, L, -1)
+
         B, L, C = c.shape
         c = (c.clamp_(0, 1) * self.code_n).floor().long()
         c = torch.clamp(c, 0, self.code_n - 1)
@@ -321,4 +327,7 @@ if __name__ == "__main__":
             print(f"Parameter {name} did not receive gradients.")
 
     codes = vae.get_normalized_indices(input_data)
+    out_data2 = vae.decode_code(codes)
     print(codes.shape)
+    print(out_data2.shape)
+    print(torch.sum((out_data2 - output_data).abs()))

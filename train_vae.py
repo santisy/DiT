@@ -165,7 +165,6 @@ def main(args):
     # Temp variables
     model_list = nn.ModuleList()
     ema_list = nn.ModuleList()
-    linear_flag = config.vae.linear
 
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
@@ -178,7 +177,6 @@ def main(args):
                 quant_version=config.vae.get("quant_version", "v0"),
                 downsample_n=config.vae.get("downsample_n", 3),
                 kl_flag=config.vae.get("kl_flag", False))
-    print(model)
     
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)

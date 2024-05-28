@@ -17,6 +17,8 @@ from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 from models import DiT
 
+import numpy as np
+from vae_model import VAE
 import argparse
 from data.ofalg_dataset import OFLAGDataset
 from data_extensions import load_utils
@@ -43,24 +45,40 @@ def main(args):
 
     in_ch = dataset.get_level_vec_len(2)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
+    sibling_num = config.model.get("sibling_num", 2)
+
+    # vae related
+    vae_std = None
+    vae_model = None
 
     # Model
     model_list = []
     in_ch_list = []
-    m_ = None
+
     for l in range(3):
         num_heads = config.model.num_heads
         depth = config.model.depth
         hidden_size = config.model.hidden_sizes[l]
         if l == 2:
-            hidden_size = 1440
-            in_ch = int(m ** 3)
-            num_heads = num_heads * 2
+            in_ch = 16
+            vae_ckpt = torch.load(args.vae_ckpt, map_location=lambda storage, loc: storage)
+            vae_std_loaded = np.load(args.vae_std)
+            vae_std = torch.from_numpy(vae_std_loaded["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device)
+            vae_model = VAE(config.vae.layer_n,
+                            config.vae.in_ch,
+                            config.vae.latent_ch,
+                            m,
+                            quant_code_n=config.vae.get("quant_code_n", 2048),
+                            quant_version=config.vae.get("quant_version", "v0"),
+                            downsample_n=config.vae.get("downsample_n", 3),
+                            kl_flag=config.vae.get("kl_flag", False))
+            vae_model.load_state_dict(vae_ckpt["model"][0])
+            vae_model = vae_model.to(device)
+            vae_model = vae_model.eval()
             in_ch_list.append(in_ch)
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
-            in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
-            num_heads = num_heads * 2
+            in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
             in_ch_list.append(in_ch)
         elif l == 0: # Root positions and scales
             in_ch = 4
@@ -72,7 +90,7 @@ def main(args):
             in_channels=in_ch, # Combine to each children
             num_classes=config.data.num_classes,
             condition_node_num=dataset.get_condition_num(l),
-            condition_node_dim=dataset.get_condition_dim(l),
+            condition_node_dim=dataset.get_condition_dim(l, sibling_num),
             # Network itself related
             hidden_size=hidden_size, # 4 times rule
             mlp_ratio=config.model.mlp_ratio,
@@ -82,9 +100,10 @@ def main(args):
             learn_sigma=config.diffusion.get("learn_sigma", True),
             # Other flags
             add_inject=config.model.add_inject,
-            aligned_gen=True if l != 0 else False,
+            aligned_gen=True if l > 0 else False,
             pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
-            level_num=l
+            level_num=l,
+            sibling_num=sibling_num
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
@@ -117,7 +136,7 @@ def main(args):
             generator.manual_seed(seed)
 
             # Shape parameter
-            length = dataset.octree_root_num if l == 0 else dataset.octree_root_num * 8 ** 2
+            length = dataset.octree_root_num if l == 0 else dataset.octree_root_num * 8
             ch = in_ch_list[l]
 
             # Random input
@@ -140,18 +159,23 @@ def main(args):
                                                 device=device)
 
             # Append the generated latents for the following generation
-            samples = samples.float().clip_(0, 1)
+            if l != 2:
+                samples = samples.float().clip_(0, 1)
 
             if l == 1:
                 B, L, C = samples.shape
-                samples = samples.reshape(B, L // 8, 8, C)
-                samples = samples.reshape(B, L // 8, 8 * C).contiguous()
+                samples = samples.reshape(B, L // sibling_num, -1).contiguous()
+
             xc.append(samples.clone())
 
             if l == 2:
                 # Rescale and decode
                 B, L, C = xc[-2].shape
-                x2_non_V = xc[-2].reshape(B, L, 8, C // 8).reshape(B, L * 8, C // 8).clone()
+                x2_non_V = xc[-2].reshape(B, L * sibling_num, -1).contiguous()
+                with torch.no_grad():
+                    samples = samples * vae_std
+                    samples = vae_model.decode_code(samples)
+                samples = samples[:, :, :m ** 3].clone()
                 decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
             elif l == 0:
                 sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
@@ -166,13 +190,9 @@ def main(args):
         # Denormalize and dump
         for j in range(batch_size):
             x0 = dataset.denormalize(decoded[0][j], 0).detach().cpu()
-            x1 = dataset.denormalize(torch.zeros((dataset.octree_root_num * 8,
-                                                  dataset.get_level_vec_len(1)),
-                                                  dtype=torch.float32, device=device),
-                                    1).detach().cpu()
-            x2 = dataset.denormalize(decoded[1][j], 2).detach().cpu()
+            x1 = dataset.denormalize(decoded[1][j], 1).detach().cpu()
             load_utils.dump_to_bin(os.path.join(out_dir, f"out_{j + i * batch_size:04d}.bin"),
-                                   x0, x1, x2, dataset.octree_root_num)
+                                   x0, x1, dataset.octree_root_num)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -189,4 +209,9 @@ if __name__ == "__main__":
     parser.add_argument("--l0_seed", type=int, default=None,
                         help="Given and fixed l0 random seed.")
     args = parser.parse_args()
+
+    # VAE related
+    parser.add_argument("--vae-std", type=str, required=True)
+    parser.add_argument("--vae-ckpt", type=str, required=True)
+
     main(args)
