@@ -297,8 +297,10 @@ class OnlineVariance(object):
             self.mean = batch_mean
         else:
             delta = batch_mean - self.mean
+            # Update mean
             self.mean += delta * batch_count / (self.n + batch_count)
-            self.M2 += torch.sum((batch - batch_mean.unsqueeze(0))**2 + (delta**2) * self.n * batch_count / (self.n + batch_count), dim=0)
+            # Update M2
+            self.M2 += torch.sum((batch - batch_mean.unsqueeze(0))**2, dim=0) + delta**2 * self.n * batch_count / (self.n + batch_count)
         
         self.n += batch_count
 
@@ -306,8 +308,8 @@ class OnlineVariance(object):
     def std(self):
         if self.n < 2:
             return float('nan') * torch.ones(self.num_features)  # Return nan if less than 2 samples
-        std = torch.sqrt(self.M2 / (self.n - 1)).detach().cpu().numpy()
-        return std
+        std = torch.sqrt(self.M2 / (self.n - 1))
+        return std.detach().cpu().numpy()
 
 if __name__ == "__main__":
     vae = VAE(2, 64, 1,

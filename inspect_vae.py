@@ -74,10 +74,9 @@ def main(args):
 
     # Go through the whole dataset
     npy_out = os.path.join(out_dir, f"{exp_name}-{ckpt_name}-{dataset_name}-stds")
-    #if os.path.isfile(npy_out + ".npz"):
-    #    std = torch.from_numpy(np.load(npy_out + ".npz")["std2"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device)
-    #else:
-    #    std = 1.0
+    std = None
+    if os.path.isfile(npy_out + ".npz"):
+        std = torch.from_numpy(np.load(npy_out + ".npz")["std1"]).unsqueeze(dim=0).unsqueeze(dim=0).clone().to(device)
     count = 0
     for x0, x1, _, _, _ in tqdm(loader):
         x0 = x0.to(device)
@@ -92,6 +91,8 @@ def main(args):
                         indices = vae_model_list[0].get_normalized_indices(x1_padded)
                     indices = indices.float()
                     x1_rec = vae_model_list[0].decode_code(indices)
+                if std is not None:
+                    normalized_indices = indices / (std + 1e-6)
                 x1_rec = x1_rec[:, :, :m ** 3]
                 loss1 = (x1 - x1_rec).abs() / (x1.size(1) * x1.size(0))
                 loss_train = loss1.sum()
