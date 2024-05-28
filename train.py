@@ -187,7 +187,7 @@ def main(args):
                         quant_version=config.vae.get("quant_version", "v0"),
                         downsample_n=config.vae.get("downsample_n", 3),
                         kl_flag=config.vae.get("kl_flag", False))
-        vae_model.load_state_dict(vae_ckpt["model"][0])
+        vae_model.load_state_dict(vae_ckpt["ema"][0])
         vae_model = vae_model.to(device)
         vae_model = vae_model.eval()
 
