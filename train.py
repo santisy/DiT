@@ -30,7 +30,7 @@ import json
 
 from models import DiT
 from diffusion import create_diffusion
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import GradScaler, autocast
 from modules.edm import EDMPrecond, EDMLoss
 
@@ -92,6 +92,20 @@ def noise_conditioning(x_list, a_list, diff):
     for x, a in zip(x_list, a_list):
         x_out.append(diff.q_sample(x, a))
     return x_out
+
+# Parameters for the learning rate schedule
+warmup_steps = 5000      # Number of steps to warm up
+total_steps = 200000      # Total number of training steps
+final_lr_factor = 0.2    # Final learning rate is 0.1 * LR_{target}
+
+# Lambda function to adjust learning rate
+def lr_lambda(current_step: int):
+    if current_step < warmup_steps:
+        # Linearly increase the learning rate during the warmup phase
+        return float(current_step) / float(max(1, warmup_steps))
+    # Linearly decrease the learning rate to `final_lr_factor` * LR_{target} after the warmup phase
+    progress = (current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+    return final_lr_factor + (1 - final_lr_factor) * (1 - progress)
 
 #################################################################################
 #                                  Training Loop                                #
@@ -219,8 +233,7 @@ def main(args):
     opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
     if resume_ckpt is not None:
         opt.load_state_dict(resume_ckpt["opt"])
-    if not args.no_lr_decay:
-        scheduler = StepLR(opt, step_size=5, gamma=0.999)
+    scheduler = LambdaLR(opt, lr_lambda)
     scaler = GradScaler()
 
 
@@ -301,11 +314,16 @@ def main(args):
             else:
                 loss = edm_loss(model, x, model_kwargs=model_kwargs)
             loss = loss_dict["loss"].mean()
+
+            # Gradient step and more
             opt.zero_grad()
             scaler.scale(loss).backward()
             scaler.step(opt)
             scaler.update()
             update_ema(ema, model.module)
+
+            # Learning rate scheduler
+            scheduler.step()
 
             # Log loss values:
             running_loss += loss.item()
@@ -321,8 +339,7 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
-                if not args.no_lr_decay:
-                    log_info += f", Learning Rate: {scheduler.get_lr()}"
+                log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
@@ -344,9 +361,6 @@ def main(args):
                     if args.work_on_tmp_dir:
                         copy_back_fn(checkpoint_path, local_dir)
                 dist.barrier()
-
-        if not args.no_lr_decay:
-            scheduler.step()
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
