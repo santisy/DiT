@@ -309,6 +309,7 @@ def main(args):
                     x = torch.cat(x_list, dim=0).detach().float()
                     x = x[:, :, :m ** 3]
                     x = x / (vae_std + 1e-6)
+                    x = x.detach()
 
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // sibling_num, -1)
