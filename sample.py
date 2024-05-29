@@ -152,7 +152,9 @@ def main(args):
                 x2_non_V = xc[-2].reshape(B, L * sibling_num, -1).clone()
                 decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
             elif l == 0:
-                sample_ = torch.zeros(batch_size, length, dataset.get_level_vec_len(0)).to(device)
+                sample_ = torch.zeros(batch_size,
+                                      length,
+                                      dataset.get_level_vec_len(0) - 4).to(device)
                 sample_[:, :, -7] = samples[:, :, 0]
                 sample_[:, :, -3:] = samples[:, :, -3:]
                 decoded.append(sample_.clone())
