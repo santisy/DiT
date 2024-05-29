@@ -41,7 +41,7 @@ def main(args):
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    in_ch = dataset.get_level_vec_len(2)
+    in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
     sibling_num = config.model.get("sibling_num", 2)
 
