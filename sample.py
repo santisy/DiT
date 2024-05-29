@@ -44,6 +44,7 @@ def main(args):
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
     sibling_num = config.model.get("sibling_num", 2)
+    depth_total = config.model.depth
 
     # Model
     model_list = []
@@ -51,7 +52,10 @@ def main(args):
     m_ = None
     for l in range(3):
         num_heads = config.model.num_heads
-        depth = config.model.depth
+        if isinstance(depth_total, [list, tuple]):
+            depth = depth[l]
+        else:
+            depth = depth_total
         hidden_size = config.model.hidden_sizes[l]
         if l == 2:
             in_ch = int(m ** 3)
@@ -80,7 +84,7 @@ def main(args):
             learn_sigma=config.diffusion.get("learn_sigma", True),
             # Other flags
             add_inject=config.model.add_inject,
-            aligned_gen=True if l > 0 else False,
+            aligned_gen=config.model.get("align_gen", [False, True, True])[l],
             pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
             level_num=l,
             sibling_num=sibling_num

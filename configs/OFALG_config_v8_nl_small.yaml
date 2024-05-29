@@ -1,16 +1,19 @@
 model:
-    depth: 24
+    depth: [20, 24, 24]
     mlp_ratio: 2.0
-    cross_layers: []
-    num_heads: 32
+    cross_layers: [0, 4, 8, 12, 16, 20]
+    num_heads: 16
     add_inject: true
     pos_emedding_version: "v2"
-    hidden_sizes: [1024, 1024, 1024]
+    hidden_sizes: [768, 1024, 1024]
+    align_gen: [true, true, true]
+    sibling_num: 4
+    use_EDM: false
 
 data:
     num_classes: -1
-    octree_root_num: 64
-    unit_length_list: [361, 139, 139]
+    octree_root_num: 256
+    unit_length_list: [361, 139]
 
 diffusion:
     noise_schedule: "squaredcos_cap_v2"
@@ -20,8 +23,7 @@ diffusion:
 vae:
     layer_n: 6
     in_ch: 64
-    latent_ch: 32
+    latent_ch: 128
     latent_ratio: 4
-    quant_version: "v1"
     quant_code_n: 1024
     linear: false

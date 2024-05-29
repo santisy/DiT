@@ -164,6 +164,8 @@ def main(args):
     # Arch variables
     num_heads = config.model.num_heads
     depth = config.model.depth
+    if isinstance(depth, [list, tuple]):
+        depth = depth[level_num]
     hidden_size = config.model.hidden_sizes[level_num]
     edm_flag = config.model.get("use_EDM", False)
     sibling_num = config.model.get("sibling_num", 2)
@@ -192,7 +194,7 @@ def main(args):
         learn_sigma=config.diffusion.get("learn_sigma", True),
         # Other flags
         add_inject=config.model.add_inject,
-        aligned_gen=True if level_num > 0 else False,
+        aligned_gen=config.model.get("align_gen", [False, True, True])[level_num],
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num,
         sibling_num=sibling_num

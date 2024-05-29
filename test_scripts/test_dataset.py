@@ -1,3 +1,4 @@
+import torch
 import sys
 sys.path.insert(0, ".")
 from data_extensions import load_utils
@@ -9,6 +10,10 @@ print(x0.shape)
 print(x1.shape)
 print("Checking")
 
+x0_out = torch.zeros_like(x0)
+x0_out[:, -7] = x0[:, -7]
+x0_out[:, -3:] = x0[:, -3:]
+x0 = x0_out.clone()
 x0 = dataset.denormalize(x0, 0)
 x1 = dataset.denormalize(x1, 1)
 
