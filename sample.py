@@ -52,7 +52,7 @@ def main(args):
     m_ = None
     for l in range(3):
         num_heads = config.model.num_heads
-        if isinstance(depth_total, [list, tuple]):
+        if isinstance(depth_total, (list, tuple)):
             depth = depth[l]
         else:
             depth = depth_total

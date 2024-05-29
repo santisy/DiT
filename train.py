@@ -164,7 +164,7 @@ def main(args):
     # Arch variables
     num_heads = config.model.num_heads
     depth = config.model.depth
-    if isinstance(depth, [list, tuple]):
+    if isinstance(depth, (list, tuple)):
         depth = depth[level_num]
     hidden_size = config.model.hidden_sizes[level_num]
     edm_flag = config.model.get("use_EDM", False)
