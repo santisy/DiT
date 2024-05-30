@@ -51,6 +51,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plot training loss from log files.')
     parser.add_argument('log_files', type=str, nargs='+', help='Path to the log files to parse and plot')
     parser.add_argument("-s", "--start_ratio", type=float, default=1.0)
+    parser.add_argument("-w", "--smooth_window", type=int, default=10)
     args = parser.parse_args()
-    main(args.log_files, args.start_ratio)
+    main(args.log_files, args.start_ratio, smooth_factor=args.smooth_window)
 

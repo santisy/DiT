@@ -93,7 +93,7 @@ def main(args):
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-        model.load_state_dict(model_ckpt["ema"])
+        model.load_state_dict(model_ckpt["model"])
         model.to(device)
         model.eval()  # important!
         model_list.append(model)

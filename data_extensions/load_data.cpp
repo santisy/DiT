@@ -246,37 +246,44 @@ void loadFromFileAndAssignPos(std::ifstream& file,
 
 std::vector<at::Tensor> readAndConstruct(std::string inputPath,
                                          const int level0UnitLength = 361,
-                                         const int level1UnitLength = 139){
+                                         const int level1UnitLength = 139,
+                                         const int level2UnitLength = 139){
     std::ifstream file(inputPath, std::ios::in | std::ios::binary);
 
     float octreeRootNumFloat;
     file.read(reinterpret_cast<char*>(&octreeRootNumFloat), sizeof(float));
     int octreeRootNum = static_cast<int>(octreeRootNumFloat);
-    float length0f, length1f;
+    float length0f, length1f, length2f;
     file.read(reinterpret_cast<char*>(&length0f), sizeof(float));
     file.read(reinterpret_cast<char*>(&length1f), sizeof(float));
-    int length0, length1;
+    file.read(reinterpret_cast<char*>(&length2f), sizeof(float));
+    int length0, length1, length2;
     length0 = static_cast<int>(length0f);
     length1 = static_cast<int>(length1f);
+    length2 = static_cast<int>(length2f);
 
     // The deducted 2 are the tree topology indicators (parent ID and children ID)
     at::Tensor level0Tensor = at::zeros({octreeRootNum, level0UnitLength - 4});
     at::Tensor level1Tensor = at::zeros({octreeRootNum * 8, level1UnitLength - 4});
+    at::Tensor level2Tensor = at::zeros({octreeRootNum * 8 * 8, level2UnitLength - 4});
 
     // Positions
     at::Tensor level1Positions = at::zeros({octreeRootNum * 8, 3});
+    at::Tensor level2Positions = at::zeros({octreeRootNum * 8 * 8, 3});
 
     // Scales
     at::Tensor level1Scales = at::zeros({octreeRootNum * 8});
+    at::Tensor level2Scales = at::zeros({octreeRootNum * 8 * 8});
 
     loadFromFile(file, level0Tensor, length0, level0UnitLength, true);
     at::Tensor level0Positions = level0Tensor.index({at::indexing::Slice(), at::indexing::Slice(-3, at::indexing::None)}).clone();
     at::Tensor level0Scales = level0Tensor.index({at::indexing::Slice(), -7}).clone();
     loadFromFileAndAssignPos(file, level0Scales, level1Scales, level1Tensor, level0Positions, level1Positions, length1, level1UnitLength);
+    loadFromFileAndAssignPos(file, level1Scales, level2Scales, level2Tensor, level1Positions, level2Positions, length2, level2UnitLength);
 
     file.close();
 
-    return {level0Tensor, level1Tensor, level0Positions, level1Positions};
+    return {level0Tensor, level1Tensor, level2Tensor, level0Positions, level1Positions, level2Positions};
 }
 
 at::Tensor deducePositionFromSample(at::Tensor preScales,
@@ -334,6 +341,7 @@ at::Tensor angularBack(at::Tensor inputVec, const int M){
 void dumpToBin(std::string outPath,
                at::Tensor &level0,
                at::Tensor &level1,
+               at::Tensor &level2,
                const int octreeRootNum){
     std::ofstream file(outPath, std::ios::out | std::ios::binary);
     const float octreeRootNumFloat = static_cast<float>(octreeRootNum);
@@ -341,8 +349,7 @@ void dumpToBin(std::string outPath,
 
     std::vector<at::Tensor> level0_out;
     std::vector<at::Tensor> level1_out;
-
-    // TODO: Here is some bug
+    std::vector<at::Tensor> level2_out;
 
     for (int i = 0; i < octreeRootNum; i++){
         if (at::sum(at::pow(level0.index({i, at::indexing::Slice(-14, -10)}), 2)).item().toFloat() < 0.7f){
@@ -366,16 +373,32 @@ void dumpToBin(std::string outPath,
         level1_out.push_back(l1_out_with_pc);
     }
 
+    for (int i = 0; i < octreeRootNum * 8 * 8; i++){
+        if (at::sum(at::pow(level2.index({i, at::indexing::Slice(-10, -6)}), 2)).item().toFloat() < 0.7f){
+            continue;
+        }
+        at::Tensor l2_out_with_pc = at::zeros({level2.size(1) + 4});
+        l2_out_with_pc[0] = i % 8 ; // Children index
+        l2_out_with_pc[1] = i / 8;
+        l2_out_with_pc.index_put_({at::indexing::Slice(2, at::indexing::None)}, angularBack(level2.index({i}), 5));
+        level2_out.push_back(l2_out_with_pc);
+    }
+
     float length0f = static_cast<float>(level0_out.size());
     float length1f = static_cast<float>(level1_out.size());
+    float length2f = static_cast<float>(level2_out.size());
     file.write(reinterpret_cast<const char*>(&length0f), sizeof(float));
     file.write(reinterpret_cast<const char*>(&length1f), sizeof(float));
+    file.write(reinterpret_cast<const char*>(&length2f), sizeof(float));
 
     for (auto &t: level0_out){
         file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level0.size(1) + 4));
     }
     for (auto &t: level1_out){
         file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level1.size(1) + 4));
+    }
+    for (auto &t: level2_out){
+        file.write(reinterpret_cast<const char*>(t.data_ptr<float>()), sizeof(float) * (level2.size(1) + 4));
     }
 
     file.close();

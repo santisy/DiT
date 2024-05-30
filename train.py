@@ -172,7 +172,7 @@ def main(args):
 
     # Create dataset
     dataset = OFLAGDataset(args.data_root, **config.data)
-    in_ch = dataset.get_level_vec_len(1)
+    in_ch = dataset.get_level_vec_len(2)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
     # Arch variables
@@ -188,7 +188,7 @@ def main(args):
         in_ch = int(m ** 3)
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
-        in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
+        in_ch = int(dataset.get_level_vec_len(2) - m ** 3)
     elif level_num == 0: # Root positions and scales
         in_ch = 4
 
@@ -272,11 +272,11 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x0_raw, x1_raw, p0, _, y in loader:
+        for x0_raw, _, x2_raw, _, _, _, y in loader:
 
             x0 = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).to(device)
-            x1 = x1_raw[:, :, m ** 3:].clone().to(device)
-            x2 = x1_raw[:, :, :m ** 3].clone().to(device)
+            x1 = x2_raw[:, :, m ** 3:].clone().to(device)
+            x2 = x2_raw[:, :, :m ** 3].clone().to(device)
 
             y = y.to(device)
 

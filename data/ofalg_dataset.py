@@ -11,7 +11,7 @@ class OFLAGDataset(Dataset):
     def __init__(self,
                  data_root: str,
                  octree_root_num: int=64,
-                 unit_length_list = [361, 139],
+                 unit_length_list = [361, 139, 139],
                  only_infer=False,
                  validate_num=0,
                  validate_flag=False,
@@ -21,6 +21,7 @@ class OFLAGDataset(Dataset):
         self._octree_root_num = octree_root_num
         self._unit_length0 = unit_length_list[0]
         self._unit_length1 = unit_length_list[1]
+        self._unit_length2 = unit_length_list[1]
 
         stats_file = os.path.join(data_root, "stats.json")
         assert os.path.isfile(stats_file)
@@ -142,20 +143,22 @@ class OFLAGDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.file_paths[idx]
-        level0_tensor, level1_tensor, \
-        level0_position, level1_position \
+        level0_tensor, level1_tensor, level2_tensor, \
+        level0_position, level1_position, level2_position \
             = load_utils.load(file_path,
                               self._unit_length0,
-                              self._unit_length1)
+                              self._unit_length1,
+                              self._unit_length2)
 
         assert level0_tensor.size(0) == self._octree_root_num 
 
 
         self.normalize(level0_tensor, 0)
         self.normalize(level1_tensor, 1)
+        self.normalize(level2_tensor, 1)
 
         # Dummy label
         label = -1
 
-        return level0_tensor, level1_tensor,  \
-               level0_position, level1_position, label
+        return level0_tensor, level1_tensor, level2_tensor,  \
+               level0_position, level1_position, level2_position, label
