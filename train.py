@@ -235,7 +235,8 @@ def main(args):
         opt.load_state_dict(resume_ckpt["opt"])
     if not args.no_lr_decay:
         scheduler = LambdaLR(opt, lr_lambda)
-    scaler = GradScaler()
+    if not args.no_mixed_pr:
+        scaler = GradScaler()
 
 
     sampler = DistributedSampler(
@@ -308,7 +309,7 @@ def main(args):
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             if not edm_flag:
                 t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-                with autocast():
+                with autocast(enabled=not args.no_mixed_pr):
                     loss_dict = diffusion.training_losses(model, x, t,
                                                           model_kwargs=model_kwargs)
                 loss = loss_dict["loss"].mean()
@@ -318,9 +319,13 @@ def main(args):
 
             # Gradient step and more
             opt.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(opt)
-            scaler.update()
+            if not args.no_mixed_pr:
+                scaler.scale(loss).backward()
+                scaler.step(opt)
+                scaler.update()
+            else:
+                loss.backward()
+                opt.step()
             update_ema(ema, model.module)
 
             if not args.no_lr_decay:
@@ -392,6 +397,7 @@ if __name__ == "__main__":
     parser.add_argument("--level-num", type=int, required=True)
     parser.add_argument("--work-on-tmp-dir", action="store_true")
     parser.add_argument("--resume", type=str, default=None)
+    parser.add_argument("--no-mixed-pr", action="store_true")
 
     args = parser.parse_args()
     main(args)
