@@ -233,7 +233,8 @@ def main(args):
     opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
     if resume_ckpt is not None:
         opt.load_state_dict(resume_ckpt["opt"])
-    scheduler = LambdaLR(opt, lr_lambda)
+    if not args.no_lr_decay:
+        scheduler = LambdaLR(opt, lr_lambda)
     scaler = GradScaler()
 
 
@@ -322,8 +323,9 @@ def main(args):
             scaler.update()
             update_ema(ema, model.module)
 
-            # Learning rate scheduler
-            scheduler.step()
+            if not args.no_lr_decay:
+                # Learning rate scheduler
+                scheduler.step()
 
             # Log loss values:
             running_loss += loss.item()
@@ -339,7 +341,8 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
-                log_info += f", Learning Rate: {scheduler.get_lr()}"
+                if  not args.no_lr_decay:
+                    log_info += f", Learning Rate: {scheduler.get_lr()}"
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
