@@ -55,7 +55,7 @@ def main(args):
     for l in range(3):
         num_heads = config.model.num_heads
         if isinstance(depth_total, (list, tuple)):
-            depth = depth[l]
+            depth = depth_total[l]
         else:
             depth = depth_total
         if isinstance(sibling_total, (list, tuple)):
