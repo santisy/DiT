@@ -19,6 +19,7 @@ from models import DiT
 
 import argparse
 from data.ofalg_dataset import OFLAGDataset
+from bpregen_model import PlainModel
 from data_extensions import load_utils
 from torch.cuda.amp import autocast
 
@@ -43,8 +44,9 @@ def main(args):
 
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-    sibling_num = config.model.get("sibling_num", 2)
+    sibling_total = config.model.get("sibling_num", 2)
     depth_total = config.model.depth
+    learn_sigma = config.diffusion.get("learn_sigma", True)
 
     # Model
     model_list = []
@@ -56,6 +58,11 @@ def main(args):
             depth = depth[l]
         else:
             depth = depth_total
+        if isinstance(sibling_total, (list, tuple)):
+            sibling_num = sibling_total[l]
+        else:
+            sibling_num = sibling_total
+
         hidden_size = config.model.hidden_sizes[l]
         if l == 2:
             in_ch = int(m ** 3)
@@ -68,8 +75,14 @@ def main(args):
             in_ch = 4
             in_ch_list.append(in_ch)
 
+        if config.model.get("plain_model", False):
+            model_class = PlainModel
+            learn_sigma = False
+        else:
+            model_class = DiT
+
         # Create DiT model
-        model = DiT(
+        model = model_class(
             # Data related
             in_channels=in_ch, # Combine to each children
             num_classes=config.data.num_classes,
@@ -81,7 +94,7 @@ def main(args):
             depth=depth,
             num_heads=num_heads,
             cross_layers=config.model.cross_layers if l != 0 else [],
-            learn_sigma=config.diffusion.get("learn_sigma", True),
+            learn_sigma=learn_sigma,
             # Other flags
             add_inject=config.model.add_inject,
             aligned_gen=config.model.get("align_gen", [False, True, True])[l],
