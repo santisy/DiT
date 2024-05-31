@@ -98,6 +98,9 @@ def main(args):
         model.eval()  # important!
         model_list.append(model)
 
+        if args.only_l0:
+            break
+
     diffusion = create_diffusion(timestep_respacing="",
                                  **config.diffusion)
 
@@ -167,10 +170,18 @@ def main(args):
             scales.append(None)
             positions.append(None)
 
+            if args.only_l0:
+                break
+
         # Denormalize and dump
         for j in range(batch_size):
             x0 = dataset.denormalize(decoded[0][j], 0).detach().cpu()
-            x1 = dataset.denormalize(decoded[1][j], 1).detach().cpu()
+            if not args.only_l0:
+                x1 = dataset.denormalize(decoded[1][j], 1).detach().cpu()
+            else:
+                x1 = torch.zeros(dataset.octree_root_num * 8,
+                                 dataset.get_level_vec_len(1) - 4)
+                x1 = dataset.denormalize(x1, 1)
             load_utils.dump_to_bin(os.path.join(out_dir, f"out_{j + i * batch_size:04d}.bin"),
                                    x0, x1, dataset.octree_root_num)
 
@@ -188,5 +199,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample-batch-size", type=int, default=4)
     parser.add_argument("--l0_seed", type=int, default=None,
                         help="Given and fixed l0 random seed.")
+    parser.add_argument("--only-l0", action="store_true",
+                        help="Only inference the l1")
     args = parser.parse_args()
     main(args)

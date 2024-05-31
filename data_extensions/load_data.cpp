@@ -342,12 +342,7 @@ void dumpToBin(std::string outPath,
     std::vector<at::Tensor> level0_out;
     std::vector<at::Tensor> level1_out;
 
-    // TODO: Here is some bug
-
     for (int i = 0; i < octreeRootNum; i++){
-        if (at::sum(at::pow(level0.index({i, at::indexing::Slice(-14, -10)}), 2)).item().toFloat() < 0.7f){
-            continue;
-        }
         at::Tensor l0_out_with_pc = at::zeros({level0.size(1) + 4});
         l0_out_with_pc[0] = i; // Children index
         l0_out_with_pc[1] = -1;
@@ -356,7 +351,7 @@ void dumpToBin(std::string outPath,
     }
 
     for (int i = 0; i < octreeRootNum * 8; i++){
-        if (at::sum(at::pow(level1.index({i, at::indexing::Slice(-10, -6)}), 2)).item().toFloat() < 0.7f){
+        if (at::sum(at::abs(level1.index({i, at::indexing::Slice(-10, -6)}) + 1.0f)).item().toFloat() < 0.1f){
             continue;
         }
         at::Tensor l1_out_with_pc = at::zeros({level1.size(1) + 4});
