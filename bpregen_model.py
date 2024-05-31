@@ -38,6 +38,7 @@ class PlainModel(nn.Module):
                  hidden_size=1024,
                  mlp_ratio=2,
                  sibling_num=1,
+                 condition_node_dim=[],
                  **kwargs
                  ):
 
@@ -45,6 +46,7 @@ class PlainModel(nn.Module):
         self.in_ch = in_channels * sibling_num
         self.embed_dim = hidden_size
         self.sibling_num = sibling_num
+        self.condition_node_dim = condition_node_dim
 
         layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
                                            nhead=num_heads,
@@ -75,21 +77,58 @@ class PlainModel(nn.Module):
             nn.Linear(self.embed_dim, self.in_ch),
         )
 
+        if len(condition_node_dim) > 0:
+            self.a_embed_list = nn.ModuleList()
+            self.c_embed_list = nn.ModuleList()
+            for c_nd in condition_node_dim:
+                self.a_embed_list(nn.Sequential(
+                    nn.Linear(self.embed_dim, self.embed_dim),
+                    nn.LayerNorm(self.embed_dim),
+                    nn.SiLU(),
+                    nn.Linear(self.embed_dim, self.embed_dim))
+                )
+                self.c_embed_list(nn.Sequential(
+                    nn.Linear(c_nd, self.embed_dim),
+                    nn.LayerNorm(self.embed_dim),
+                    nn.SiLU(),
+                    nn.Linear(self.embed_dim, self.embed_dim))
+                )
+
         return
 
        
-    def forward(self, x, timesteps, y=None, **kwargs):
+    def forward(self, x, timesteps, y=None, a=[], xc=[], **kwargs):
         B, L, C = x.shape
-
         if self.sibling_num > 1:
             x = x.reshape(B, L // self.sibling_num, -1)
+            L_x = L // self.sibling_num
+        else:
+            L_x = L
+        other_embed_accumulate = 0
+        if len(self.condition_node_dim) > 0:
+            # Noise augmentation level `a`, and previous condition embedding `c`
+            for a_, xc_, a_embed, c_embed in zip(
+                a, xc, self.a_embed_list, self.c_embed_list):
+                other_embed_accumulate += a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
+                xc_embeded = c_embed(xc_)
+                L_xc = xc_embeded.size(1)
+                xc_embeded = torch.repeat_interleave(xc_embeded, L_x // L_xc, dim=1)
+                other_embed_accumulate += xc_embeded
+
+            p_l = 8 // self.sibling_num
+            pos = torch.arange(p_l).unsqueeze(dim=0)
+            PE = sincos_embedding(pos, self.embed_dim).unsqueeze(dim=0)
+            PE = PE.repeat(1, L // self.sibling_num // p_l, 1)
+
+        else:
+            PE = 0
 
         """ forward pass """
         bsz = timesteps.size(0)
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
         x_embeds = self.p_embed(x)
     
-        tokens = x_embeds + time_embeds
+        tokens = x_embeds + time_embeds + other_embed_accumulate + PE
         output = self.net(src=tokens)
         pred = self.fc_out(output)
         pred = pred.reshape(B, L, C)
