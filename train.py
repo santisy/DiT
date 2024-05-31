@@ -187,7 +187,7 @@ def main(args):
     sibling_num = config.model.get("sibling_num", 2)
     if isinstance(sibling_num, (list, tuple)):
         sibling_num = sibling_num[level_num]
-    learn_sigma = config.diffusion.get("learn_sigma", True),
+    learn_sigma = config.diffusion.get("learn_sigma", True)
 
     if level_num == 2:
         in_ch = int(m ** 3)
