@@ -9,7 +9,7 @@ model:
     align_gen: [true, true, true]
     sibling_num: [1, 2, 2]
     use_EDM: false
-    plain_model_l0: true
+    plain_model: true
 
 data:
     num_classes: -1
