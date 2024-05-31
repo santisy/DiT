@@ -81,13 +81,13 @@ class PlainModel(nn.Module):
             self.a_embed_list = nn.ModuleList()
             self.c_embed_list = nn.ModuleList()
             for c_nd in condition_node_dim:
-                self.a_embed_list(nn.Sequential(
+                self.a_embed_list.append(nn.Sequential(
                     nn.Linear(self.embed_dim, self.embed_dim),
                     nn.LayerNorm(self.embed_dim),
                     nn.SiLU(),
                     nn.Linear(self.embed_dim, self.embed_dim))
                 )
-                self.c_embed_list(nn.Sequential(
+                self.c_embed_list.append(nn.Sequential(
                     nn.Linear(c_nd, self.embed_dim),
                     nn.LayerNorm(self.embed_dim),
                     nn.SiLU(),
@@ -97,7 +97,8 @@ class PlainModel(nn.Module):
         return
 
        
-    def forward(self, x, timesteps, y=None, a=[], xc=[], **kwargs):
+    def forward(self, x, timesteps, y=None, a=[], x0=[], **kwargs):
+
         B, L, C = x.shape
         if self.sibling_num > 1:
             x = x.reshape(B, L // self.sibling_num, -1)
@@ -108,18 +109,18 @@ class PlainModel(nn.Module):
         if len(self.condition_node_dim) > 0:
             # Noise augmentation level `a`, and previous condition embedding `c`
             for a_, xc_, a_embed, c_embed in zip(
-                a, xc, self.a_embed_list, self.c_embed_list):
-                other_embed_accumulate += a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
+                a, x0, self.a_embed_list, self.c_embed_list):
+                a_embeded = a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
+                other_embed_accumulate = other_embed_accumulate + a_embeded
                 xc_embeded = c_embed(xc_)
                 L_xc = xc_embeded.size(1)
                 xc_embeded = torch.repeat_interleave(xc_embeded, L_x // L_xc, dim=1)
-                other_embed_accumulate += xc_embeded
+                other_embed_accumulate = other_embed_accumulate + xc_embeded
 
             p_l = 8 // self.sibling_num
-            pos = torch.arange(p_l).unsqueeze(dim=0)
-            PE = sincos_embedding(pos, self.embed_dim).unsqueeze(dim=0)
+            pos = torch.arange(p_l).unsqueeze(dim=0).to(x.device)
+            PE = sincos_embedding(pos, self.embed_dim)
             PE = PE.repeat(1, L // self.sibling_num // p_l, 1)
-
         else:
             PE = 0
 
