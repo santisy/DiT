@@ -17,7 +17,7 @@ data:
 
 diffusion:
     noise_schedule: "squaredcos_cap_v2"
-    learn_sigma: true
+    learn_sigma: false
     diffusion_steps: 1000
 
 vae:
