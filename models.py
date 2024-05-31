@@ -384,7 +384,8 @@ class DiT(nn.Module):
         aligned_gen=False,
         pos_embedding_version="v1",
         level_num=0,
-        sibling_num=8
+        sibling_num=8,
+        **kwargs
     ):
         super().__init__()
         self.hidden_size = hidden_size

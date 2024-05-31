@@ -29,6 +29,8 @@ import shutil
 import json
 
 from models import DiT
+from bpregen_model import PlainModel
+
 from diffusion import create_diffusion
 from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import GradScaler, autocast
@@ -183,6 +185,9 @@ def main(args):
     hidden_size = config.model.hidden_sizes[level_num]
     edm_flag = config.model.get("use_EDM", False)
     sibling_num = config.model.get("sibling_num", 2)
+    if isinstance(sibling_num, (list, tuple)):
+        sibling_num = sibling_num[level_num]
+    learn_sigma = config.diffusion.get("learn_sigma", True),
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -192,8 +197,14 @@ def main(args):
     elif level_num == 0: # Root positions and scales
         in_ch = 4
 
+    if config.model.get("plain_model", False):
+        model_class = PlainModel
+        learn_sigma = False
+    else:
+        model_class = DiT
+
     # Create DiT model
-    model = DiT(
+    model = model_class(
         # Data related
         in_channels=in_ch, # Combine to each children
         num_classes=config.data.num_classes,
@@ -205,7 +216,7 @@ def main(args):
         depth=depth,
         num_heads=num_heads,
         cross_layers=config.model.cross_layers if level_num != 0 else [],
-        learn_sigma=config.diffusion.get("learn_sigma", True),
+        learn_sigma=learn_sigma,
         # Other flags
         add_inject=config.model.add_inject,
         aligned_gen=config.model.get("align_gen", [False, True, True])[level_num],
