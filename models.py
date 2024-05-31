@@ -385,6 +385,7 @@ class DiT(nn.Module):
         pos_embedding_version="v1",
         level_num=0,
         sibling_num=8,
+        learned_pos_embedding=False,
         **kwargs
     ):
         super().__init__()
@@ -400,6 +401,11 @@ class DiT(nn.Module):
         self.aligned_gen = aligned_gen
         self.pos_embedding_version = pos_embedding_version
         self.level_num = level_num
+        self.learned_pos_embedding = learned_pos_embedding
+
+        if learned_pos_embedding and level_num == 0:
+            self.learned_PE = nn.Embedding(256 // sibling_num, hidden_size)
+            
 
         # Input layer
         if not aligned_gen:
@@ -539,6 +545,9 @@ class DiT(nn.Module):
         ## -1 means using the nearest level GT positions as the positional encoding
         if self.level_num > 0:
             x = x + PE
+        if self.level_num == 0 and self.learned_pos_embedding:
+            positions = torch.arange(x.size(1), device=x.device).unsqueeze(0)
+            x = x + self.learned_PE(positions)
 
         for block in self.blocks:
             x = block(x, c, x0, a_out)                      # (N, L, D)

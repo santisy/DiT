@@ -30,7 +30,10 @@ def main(log_files, start_ratio, smooth_factor=10):
         losses = losses[:min_length]
         start_at = int(len(losses) * start_ratio)
         losses = losses[start_at:]
-        losses_smoothed = smooth(losses, smooth_factor)
+        if smooth_factor > 1:
+            losses_smoothed = smooth(losses, smooth_factor)
+        else:
+            losses_smoothed = losses
         plt.plot(np.arange(start_at, min_length) * 100, losses_smoothed, label=f'{log_file.split("/")[-1].split(".")[0]}', color=colors[i % len(colors)], linewidth=3)
     
     #plt.title('Training Loss Over Time', fontsize=18)
@@ -51,6 +54,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plot training loss from log files.')
     parser.add_argument('log_files', type=str, nargs='+', help='Path to the log files to parse and plot')
     parser.add_argument("-s", "--start_ratio", type=float, default=1.0)
+    parser.add_argument("-w", "--smooth_window", type=int, default=10)
     args = parser.parse_args()
-    main(args.log_files, args.start_ratio)
+    main(args.log_files, args.start_ratio, args.smooth_window)
 

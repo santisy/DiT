@@ -222,7 +222,8 @@ def main(args):
         aligned_gen=config.model.get("align_gen", [False, True, True])[level_num],
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num,
-        sibling_num=sibling_num
+        sibling_num=sibling_num,
+        learned_pos_embedding=config.model.get("learned_pos_embedding", False)
     ).to(device)
     if edm_flag:
         print("\033[92mUse EDM.\033[00m")

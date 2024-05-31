@@ -1,12 +1,14 @@
 model:
-    depth: 24
+    depth: [24, 24, 24]
     mlp_ratio: 2.0
     cross_layers: [0, 4, 8, 12, 16, 20]
     num_heads: 16
     add_inject: true
     pos_emedding_version: "v2"
     hidden_sizes: [1024, 1024, 1024]
-    sibling_num: 2
+    align_gen: [false, true, true]
+    sibling_num: [1, 2, 2]
+    learned_pos_embedding: true
     use_EDM: false
 
 data:
