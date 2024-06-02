@@ -379,6 +379,7 @@ def main(args):
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
                     if args.work_on_tmp_dir:
                         copy_back_fn(checkpoint_path, local_dir)
+                        os.remove(checkpoint_path)
                 dist.barrier()
 
     model.eval()  # important! This disables randomized embedding dropout
