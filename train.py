@@ -286,9 +286,9 @@ def main(args):
         logger.info(f"Beginning epoch {epoch}...")
         for x0_raw, x1_raw, p0, _, y in loader:
 
-            x0 = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).to(device)
-            x1 = x1_raw[:, :, m ** 3:].clone().to(device)
-            x2 = x1_raw[:, :, :m ** 3].clone().to(device)
+            x0 = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone().to(device)
+            x1 = x1_raw[:, :, m ** 3:].detach().clone().to(device)
+            x2 = x1_raw[:, :, :m ** 3].detach().clone().to(device)
 
             y = y.to(device)
 

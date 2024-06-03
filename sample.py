@@ -30,12 +30,14 @@ def main(args):
     out_dir = args.export_dir
 
     # Load config
-    with open(args.config_file, "r") as f:
-        yaml = YAML()
-        config = edict(yaml.load(f))
+    config_list = []
+    for config_file in args.config_file:
+        with open(config_file, "r") as f:
+            yaml = YAML()
+            config_list.append(edict(yaml.load(f)))
 
     # Create dataset. For denormalizing
-    dataset = OFLAGDataset(args.data_root, only_infer=True, **config.data)
+    dataset = OFLAGDataset(args.data_root, only_infer=True, **config_list[0].data)
 
     # Setup PyTorch:
     torch.manual_seed(args.seed)
@@ -44,16 +46,19 @@ def main(args):
 
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-    sibling_total = config.model.get("sibling_num", 2)
-    depth_total = config.model.depth
-    learn_sigma = config.diffusion.get("learn_sigma", True)
 
     # Model
     model_list = []
     in_ch_list = []
     m_ = None
     for l in range(3):
+        config = config_list[l]
+
+        sibling_total = config.model.get("sibling_num", 2)
+        depth_total = config.model.depth
+        learn_sigma = config.diffusion.get("learn_sigma", True)
         num_heads = config.model.num_heads
+
         if isinstance(depth_total, (list, tuple)):
             depth = depth_total[l]
         else:
@@ -64,6 +69,7 @@ def main(args):
             sibling_num = sibling_total
 
         hidden_size = config.model.hidden_sizes[l]
+
         if l == 2:
             in_ch = int(m ** 3)
             in_ch_list.append(in_ch)
@@ -106,7 +112,7 @@ def main(args):
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-        model.load_state_dict(model_ckpt["ema"])
+        model.load_state_dict(model_ckpt["model"])
         model.to(device)
         model.eval()  # important!
         model_list.append(model)
@@ -114,8 +120,7 @@ def main(args):
         if args.only_l0:
             break
 
-    diffusion = create_diffusion(timestep_respacing="",
-                                 **config.diffusion)
+    diffusion = create_diffusion(timestep_respacing="", **config_list[0].diffusion)
 
     batch_size = args.sample_batch_size
     sample_num = args.sample_num
@@ -204,7 +209,8 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", nargs='+',
                         help="A list of strings that provides three level generation models.")
     parser.add_argument("--export-dir", type=str, required=True)
-    parser.add_argument("--config-file", type=str, required=True)
+    parser.add_argument("--config-file", nargs='+',
+                        help="List of config files")
     parser.add_argument("--data-root", type=str, required=True)
     parser.add_argument("-a", "--sample_all", action="store_true",
                         help="Sample all the needed samples to calculate the metrics.")
