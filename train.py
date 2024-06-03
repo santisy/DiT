@@ -302,15 +302,15 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),]
+                a = [torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // sibling_num, -1)
                 xc = [x0, x1]
-                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),
-                     torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device)
+                a = [torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device),
+                     torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device)
                     ]
                 positions = [None, None]
 
