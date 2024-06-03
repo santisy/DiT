@@ -27,6 +27,7 @@ import logging
 import os
 import shutil
 import json
+import gc
 
 from models import DiT
 from bpregen_model import PlainModel
@@ -364,6 +365,8 @@ def main(args):
                 running_loss = 0
                 log_steps = 0
                 start_time = time()
+                # Manual gc
+                gc.collect()
 
             # Save DiT checkpoint:
             if train_steps % args.ckpt_every == 0 and train_steps > 0:
