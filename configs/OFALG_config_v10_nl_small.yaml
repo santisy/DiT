@@ -7,7 +7,7 @@ model:
     pos_emedding_version: "v2"
     hidden_sizes: [1024, 1024, 1024]
     align_gen: [true, true, true]
-    sibling_num: [1, 2, 2]
+    sibling_num: [2, 2, 2]
     use_EDM: false
     plain_model: true
 
