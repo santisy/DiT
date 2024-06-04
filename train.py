@@ -381,7 +381,7 @@ def main(args):
                     log_info += f", Learning Rate: {scheduler.get_lr()}"
 
                 total_memory = get_total_memory_usage(parent_pid)
-                log_info += f"Total Memory Usage: {total_memory / (1024 * 1024)} MB"
+                log_info += f", Total Memory Usage: {total_memory / (1024 * 1024)} MB"
 
                 logger.info(log_info)
                 # Reset monitoring variables:
