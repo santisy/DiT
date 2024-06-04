@@ -6,7 +6,7 @@ import matplotlib.ticker as ticker
 def smooth(y, box_pts):
     box = np.ones(box_pts)/box_pts
     y_smooth = np.convolve(y, box, mode='valid')  # Use 'valid' to avoid boundary effects
-    return np.concatenate([y[:box_pts//2], y_smooth, y[-box_pts//2+1:]])
+    return y_smooth
 
 def parse_log_file(log_file):
     losses = []
@@ -34,7 +34,7 @@ def main(log_files, start_ratio, smooth_factor=10):
             losses_smoothed = smooth(losses, smooth_factor)
         else:
             losses_smoothed = losses
-        plt.plot(np.arange(start_at, min_length) * 100, losses_smoothed, label=f'{log_file.split("/")[-1].split(".")[0]}', color=colors[i % len(colors)], linewidth=3)
+        plt.plot(np.arange(start_at, min_length - smooth_factor + 1) * 100, losses_smoothed, label=f'{log_file.split("/")[-1].split(".")[0]}', color=colors[i % len(colors)], linewidth=3)
     
     #plt.title('Training Loss Over Time', fontsize=18)
     plt.xlabel('Iterations', fontsize=20)

@@ -195,14 +195,19 @@ def main(args):
     if isinstance(depth, (list, tuple)):
         depth = depth[level_num]
     hidden_size = config.model.hidden_sizes[level_num]
-    edm_flag = config.model.get("use_EDM", False)
     sibling_num = config.model.get("sibling_num", 2)
     if isinstance(sibling_num, (list, tuple)):
         sibling_num = sibling_num[level_num]
     learn_sigma = config.diffusion.get("learn_sigma", True)
 
+    # Other training variantions
+    edm_flag = config.model.get("use_EDM", False)
+    ag_flag = config.model.get("ag_flag", False)
+
     if level_num == 2:
         in_ch = int(m ** 3)
+        if ag_flag:
+            in_ch = int(dataset.get_level_vec_len(1))
     elif level_num == 1: # Leaf 
         # Length 14: orientation 8 + scales 3 + relative positions 3
         in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
@@ -300,7 +305,10 @@ def main(args):
 
             x0 = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone().to(device)
             x1 = x1_raw[:, :, m ** 3:].detach().clone().to(device)
-            x2 = x1_raw[:, :, :m ** 3].detach().clone().to(device)
+            if not ag_flag:
+                x2 = x1_raw[:, :, :m ** 3].detach().clone().to(device)
+            else:
+                x2 = x1_raw.detach().clone().to(device)
 
             y = y.to(device)
 
@@ -380,6 +388,8 @@ def main(args):
                 running_loss = 0
                 log_steps = 0
                 start_time = time()
+                # Manual gc
+                gc.collect()
 
             # Save DiT checkpoint:
             if train_steps % args.ckpt_every == 0 and train_steps > 0:
