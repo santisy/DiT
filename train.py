@@ -27,6 +27,7 @@ import logging
 import os
 import shutil
 import json
+import gc
 
 from models import DiT
 from bpregen_model import PlainModel
@@ -39,6 +40,7 @@ from modules.edm import EDMPrecond, EDMLoss
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
 
+import psutil
 
 #################################################################################
 #                             Training Helper Functions                         #
@@ -113,10 +115,20 @@ def lr_lambda(current_step: int):
 #                                  Training Loop                                #
 #################################################################################
 
+def get_total_memory_usage(pid):
+    """Get total memory usage of a process and its children."""
+    process = psutil.Process(pid)
+    total_memory = process.memory_info().rss
+    for child in process.children(recursive=True):
+        total_memory += child.memory_info().rss
+    return total_memory
+
 def main(args):
     """
     Trains a new DiT model.
     """
+    parent_pid = psutil.Process().pid
+
     if args.work_on_tmp_dir:
         tmp_dir = os.getenv("SLURM_TMPDIR", "")
     else:
@@ -359,6 +371,10 @@ def main(args):
                 log_info = f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}"
                 if  not args.no_lr_decay:
                     log_info += f", Learning Rate: {scheduler.get_lr()}"
+
+                total_memory = get_total_memory_usage(parent_pid)
+                log_info += f"Total Memory Usage: {total_memory / (1024 * 1024)} MB"
+
                 logger.info(log_info)
                 # Reset monitoring variables:
                 running_loss = 0
