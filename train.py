@@ -252,7 +252,8 @@ def main(args):
     ).to(device)
 
     if fm_flag:
-        transport = create_transport()
+        transport = create_transport("Linear", "velocity", None, None, None,
+                                     snr_type="lognorm")
     elif edm_flag:
         print("\033[92mUse EDM.\033[00m")
         model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)

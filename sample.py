@@ -129,7 +129,11 @@ def main(args):
 
         # Create samplers
         if fm_flag:
-            transport = create_transport()
+            transport = create_transport("Linear",
+                                         "velocity",
+                                         "velocity",
+                                         train_eps=0.2,
+                                         sample_eps=0.1)
             sampler = Sampler(transport)
         else:
             sampler = create_diffusion(timestep_respacing="", **config.diffusion)
