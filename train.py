@@ -365,6 +365,9 @@ def main(args):
             opt.zero_grad()
             if not args.no_mixed_pr:
                 scaler.scale(loss).backward()
+                if args.gradient_clipping:
+                    scaler.unscale_(opt)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 scaler.step(opt)
                 scaler.update()
             else:
@@ -448,6 +451,7 @@ if __name__ == "__main__":
     parser.add_argument("--work-on-tmp-dir", action="store_true")
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--no-mixed-pr", action="store_true")
+    parser.add_argument("--gradient-clipping", action="store_true")
 
     args = parser.parse_args()
     main(args)
