@@ -349,7 +349,8 @@ def main(args):
 
             if fm_flag:
                 xc = noise_conditioning(xc, a, transport, fm_flag=True)
-                loss_dict = transport.training_losses(model, x, model_kwargs)
+                with autocast(enabled=not args.no_mixed_pr):
+                    loss_dict = transport.training_losses(model, x, model_kwargs)
                 loss = loss_dict["loss"].mean()
             elif edm_flag:
                 loss = edm_loss(model, x, model_kwargs=model_kwargs)
