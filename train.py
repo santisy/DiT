@@ -92,10 +92,15 @@ def create_logger(logging_dir):
         logger.addHandler(logging.NullHandler())
     return logger
 
-def noise_conditioning(x_list, a_list, diff):
+def noise_conditioning(x_list, a_list, sampler, fm_flag=False):
     x_out = []
     for x, a in zip(x_list, a_list):
-        x_out.append(diff.q_sample(x, a))
+        if not fm_flag:
+            x_out.append(sampler.q_sample(x, a))
+        else:
+            _, x0, x = sampler.sample(x)
+            t = 1 - a.float() / 1000.0
+            x_out.append(sampler.path_sampler.plan(t, x0, x))
     return x_out
 
 # Parameters for the learning rate schedule
@@ -251,8 +256,7 @@ def main(args):
         model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)
         edm_loss = EDMLoss()
     else:
-        diffusion = create_diffusion(timestep_respacing="",
-                                    **config.diffusion)
+        diffusion = create_diffusion(timestep_respacing="", **config.diffusion)
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model)  # Create an EMA of the model for use after training
     if resume_ckpt is not None:
@@ -340,16 +344,17 @@ def main(args):
                 positions = [None, None]
 
             # Noise augmentation
-            xc = noise_conditioning(xc, a, diffusion)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
 
             if fm_flag:
+                xc = noise_conditioning(xc, a, transport, fm_flag=True)
                 loss_dict = transport.training_losses(model, x, model_kwargs)
                 loss = loss_dict["loss"].mean()
             elif edm_flag:
                 loss = edm_loss(model, x, model_kwargs=model_kwargs)
             else:
+                xc = noise_conditioning(xc, a, diffusion)
                 t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
                 with autocast(enabled=not args.no_mixed_pr):
                     loss_dict = diffusion.training_losses(model, x, t,
