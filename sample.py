@@ -13,6 +13,7 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 from diffusion import create_diffusion
+from diffusion.respace import SpacedDiffusion
 from ruamel.yaml import YAML
 from easydict import EasyDict as edict
 from models import DiT
@@ -22,6 +23,7 @@ from data.ofalg_dataset import OFLAGDataset
 from bpregen_model import PlainModel
 from data_extensions import load_utils
 from torch.cuda.amp import autocast
+from transport import create_transport, Sampler
 
 
 def main(args):
@@ -50,9 +52,15 @@ def main(args):
     # Model
     model_list = []
     in_ch_list = []
+    sampler_list = []
+    fm_flags = []
     m_ = None
     for l in range(3):
         config = config_list[l]
+
+        ag_flag = config.model.get("ag_flag", False)
+        fm_flag = config.model.get("fm_flag", False) # Flow matching flag
+        fm_flags.append(fm_flag)
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
@@ -72,6 +80,8 @@ def main(args):
 
         if l == 2:
             in_ch = int(m ** 3)
+            if ag_flag:
+                in_ch = int(dataset.get_level_vec_len(1))
             in_ch_list.append(in_ch)
         elif l == 1: # Leaf 
             # Length 14: orientation 8 + scales 3 + relative positions 3
@@ -117,10 +127,18 @@ def main(args):
         model.eval()  # important!
         model_list.append(model)
 
+        # Create samplers
+        if fm_flag:
+            transport = create_transport()
+            sampler = Sampler(transport)
+        else:
+            sampler = create_diffusion(timestep_respacing="", **config.diffusion)
+        sampler_list.append(sampler)
+
+
         if args.only_l0:
             break
 
-    diffusion = create_diffusion(timestep_respacing="", **config_list[0].diffusion)
 
     batch_size = args.sample_batch_size
     sample_num = args.sample_num
@@ -155,13 +173,26 @@ def main(args):
 
             # Sample
             with autocast():
-                samples = diffusion.p_sample_loop(model_list[l].forward,
-                                                z.shape,
-                                                z,
-                                                model_kwargs=model_kwargs,
-                                                clip_denoised=False,
-                                                progress=False,
-                                                device=device)
+                if fm_flags[l]:
+                    sampler: Sampler = sampler_list[l]
+                    sample_fn = sampler.sample_ode(
+                                sampling_method="euler",
+                                num_steps=60,
+                                atol=1e-6,
+                                rtol=1e-3,
+                                reverse=False,
+                                time_shifting_factor=4,
+                    )
+                    samples = sample_fn(z, model_list[l].forward, **model_kwargs)[-1]
+                else:
+                    sampler: SpacedDiffusion = sampler_list[l]
+                    samples = sampler.p_sample_loop(model_list[l].forward,
+                                                    z.shape,
+                                                    z,
+                                                    model_kwargs=model_kwargs,
+                                                    clip_denoised=False,
+                                                    progress=False,
+                                                    device=device)
 
             # Append the generated latents for the following generation
             samples = samples.float().clip_(0, 1)

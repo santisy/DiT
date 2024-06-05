@@ -33,6 +33,7 @@ from models import DiT
 from bpregen_model import PlainModel
 
 from diffusion import create_diffusion
+from transport import create_transport
 from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import GradScaler, autocast
 from modules.edm import EDMPrecond, EDMLoss
@@ -192,6 +193,7 @@ def main(args):
     # Other training variantions
     edm_flag = config.model.get("use_EDM", False)
     ag_flag = config.model.get("ag_flag", False)
+    fm_flag = config.model.get("fm_flag", False) # Flow matching flag
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -230,7 +232,10 @@ def main(args):
         level_num=level_num,
         sibling_num=sibling_num
     ).to(device)
-    if edm_flag:
+
+    if fm_flag:
+        transport = create_transport()
+    elif edm_flag:
         print("\033[92mUse EDM.\033[00m")
         model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)
         edm_loss = EDMLoss()
@@ -311,15 +316,15 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device),]
+                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // sibling_num, -1)
                 xc = [x0, x1]
-                a = [torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device),
-                     torch.randint(0, diffusion.num_timesteps // 4, (x.shape[0],), device=device)
+                a = [torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device),
+                     torch.randint(0, diffusion.num_timesteps // 5, (x.shape[0],), device=device)
                     ]
                 positions = [None, None]
 
@@ -327,15 +332,18 @@ def main(args):
             xc = noise_conditioning(xc, a, diffusion)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
-            if not edm_flag:
+
+            if fm_flag:
+                loss_dict = transport.training_losses(model, x, model_kwargs)
+                loss = loss_dict["loss"].mean()
+            elif edm_flag:
+                loss = edm_loss(model, x, model_kwargs=model_kwargs)
+            else:
                 t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
                 with autocast(enabled=not args.no_mixed_pr):
                     loss_dict = diffusion.training_losses(model, x, t,
                                                           model_kwargs=model_kwargs)
                 loss = loss_dict["loss"].mean()
-            else:
-                loss = edm_loss(model, x, model_kwargs=model_kwargs)
-            loss = loss_dict["loss"].mean()
 
             # Gradient step and more
             opt.zero_grad()
