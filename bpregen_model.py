@@ -39,6 +39,7 @@ class PlainModel(nn.Module):
                  mlp_ratio=2,
                  sibling_num=1,
                  condition_node_dim=[],
+                 flow_flag=False,
                  **kwargs
                  ):
 
@@ -47,6 +48,7 @@ class PlainModel(nn.Module):
         self.embed_dim = hidden_size
         self.sibling_num = sibling_num
         self.condition_node_dim = condition_node_dim
+        self.flow_flag = flow_flag
 
         layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
                                            nhead=num_heads,
@@ -105,6 +107,7 @@ class PlainModel(nn.Module):
             L_x = L // self.sibling_num
         else:
             L_x = L
+
         other_embed_accumulate = 0
         if len(self.condition_node_dim) > 0:
             # Noise augmentation level `a`, and previous condition embedding `c`
@@ -126,6 +129,8 @@ class PlainModel(nn.Module):
 
         """ forward pass """
         bsz = timesteps.size(0)
+        if self.flow_flag:
+            timesteps = (timesteps * 1000).floor().to(torch.int64)
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
         x_embeds = self.p_embed(x)
     

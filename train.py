@@ -247,7 +247,8 @@ def main(args):
         aligned_gen=config.model.get("align_gen", [False, True, True])[level_num],
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num,
-        sibling_num=sibling_num
+        sibling_num=sibling_num,
+        flow_flag=fm_flag
     ).to(device)
 
     if fm_flag:
