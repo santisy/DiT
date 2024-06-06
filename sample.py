@@ -55,14 +55,17 @@ def main(args):
     sampler_list = []
     fm_flags = []
     ag_flags = []
+    noa_flags = []
     m_ = None
     for l in range(3):
         config = config_list[l]
 
-        ag_flag = config.model.get("ag_flag", False)
+        ag_flag = config.model.get("ag_flag", False) # auto-aggressive flag
         ag_flags.append(ag_flag)
         fm_flag = config.model.get("fm_flag", False) # Flow matching flag
         fm_flags.append(fm_flag)
+        noa_flag = config.model.get("noa_flag", False)
+        noa_flags.append(noa_flag)
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
@@ -105,7 +108,9 @@ def main(args):
             in_channels=in_ch, # Combine to each children
             num_classes=config.data.num_classes,
             condition_node_num=dataset.get_condition_num(l),
-            condition_node_dim=dataset.get_condition_dim(l, sibling_num),
+            condition_node_dim=dataset.get_condition_dim(l,
+                                                         sibling_num,
+                                                         no_a_flag=noa_flag),
             # Network itself related
             hidden_size=hidden_size, # 4 times rule
             mlp_ratio=config.model.mlp_ratio,
@@ -118,7 +123,8 @@ def main(args):
             aligned_gen=config.model.get("align_gen", [False, True, True])[l],
             pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
             level_num=l,
-            sibling_num=sibling_num
+            sibling_num=sibling_num,
+            no_a_embed=noa_flag
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
@@ -175,7 +181,12 @@ def main(args):
                             generator=generator,
                             device=device)
             a = [torch.zeros((z.shape[0],) , dtype=torch.int64, device=device) for _ in range(l)]
-            model_kwargs = dict(a=a, y=None, x0=xc, positions=positions)
+            if noa_flags[l] and l > 0:
+                a = [None,]
+            model_kwargs = dict(a=a,
+                                y=None,
+                                x0=xc,
+                                positions=positions)
 
             # Sample
             with autocast():
@@ -196,7 +207,7 @@ def main(args):
                                                     z.shape,
                                                     z,
                                                     model_kwargs=model_kwargs,
-                                                    clip_denoised=False,
+                                                    clip_denoised=args.clip_denoised,
                                                     progress=False,
                                                     device=device)
 
@@ -207,6 +218,8 @@ def main(args):
                 B, L, C = samples.shape
                 samples = samples.reshape(B, L // sibling_num, -1).contiguous()
             xc.append(samples.clone())
+            if noa_flags[l] and l > 0:
+                xc = [xc[-1],]
 
             if l == 2:
                 # Rescale and decode
@@ -260,5 +273,6 @@ if __name__ == "__main__":
                         help="Given and fixed l0 random seed.")
     parser.add_argument("--only-l0", action="store_true",
                         help="Only inference the l1")
+    parser.add_argument("--clip-denoised", action="store_true")
     args = parser.parse_args()
     main(args)
