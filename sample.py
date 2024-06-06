@@ -54,11 +54,13 @@ def main(args):
     in_ch_list = []
     sampler_list = []
     fm_flags = []
+    ag_flags = []
     m_ = None
     for l in range(3):
         config = config_list[l]
 
         ag_flag = config.model.get("ag_flag", False)
+        ag_flags.append(ag_flag)
         fm_flag = config.model.get("fm_flag", False) # Flow matching flag
         fm_flags.append(fm_flag)
 
@@ -194,7 +196,7 @@ def main(args):
                                                     z.shape,
                                                     z,
                                                     model_kwargs=model_kwargs,
-                                                    clip_denoised=False,
+                                                    clip_denoised=True,
                                                     progress=False,
                                                     device=device)
 
@@ -210,7 +212,8 @@ def main(args):
                 # Rescale and decode
                 B, L, C = xc[-2].shape
                 x2_non_V = xc[-2].reshape(B, L * sibling_num, -1).clone()
-                decoded.append(torch.cat([samples, x2_non_V], dim=-1).clone())
+                #decoded.append(torch.cat([samples[:, :, :125], x2_non_V], dim=-1).clone())
+                decoded.append(samples.clone())
             elif l == 0:
                 sample_ = torch.zeros(batch_size,
                                       length,

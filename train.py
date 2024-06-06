@@ -211,6 +211,7 @@ def main(args):
     edm_flag = config.model.get("use_EDM", False)
     ag_flag = config.model.get("ag_flag", False)
     fm_flag = config.model.get("fm_flag", False) # Flow matching flag
+    noa_flag = config.model.get("noa_flag", False)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -234,7 +235,9 @@ def main(args):
         in_channels=in_ch, # Combine to each children
         num_classes=config.data.num_classes,
         condition_node_num=dataset.get_condition_num(level_num),
-        condition_node_dim=dataset.get_condition_dim(level_num, sibling_num),
+        condition_node_dim=dataset.get_condition_dim(level_num,
+                                                     sibling_num,
+                                                     no_a_flag=noa_flag),
         # Network itself related
         hidden_size=hidden_size, # 4 times rule
         mlp_ratio=config.model.mlp_ratio,
@@ -248,7 +251,8 @@ def main(args):
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num,
         sibling_num=sibling_num,
-        flow_flag=fm_flag
+        flow_flag=fm_flag,
+        no_a_embed=noa_flag
     ).to(device)
 
     if fm_flag:
@@ -334,16 +338,20 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, n_timesteps, (x.shape[0],), device=device),]
+                a = [torch.randint(0, n_timesteps // 4, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
                 B, L, C = x1.shape
                 x1 = x1.reshape(B, L // sibling_num, -1)
-                xc = [x0, x1]
-                a = [torch.randint(0, n_timesteps, (x.shape[0],), device=device),
-                     torch.randint(0, n_timesteps, (x.shape[0],), device=device)
-                    ]
+                if not noa_flag:
+                    xc = [x0, x1]
+                    a = [torch.randint(0, n_timesteps // 4, (x.shape[0],), device=device),
+                        torch.randint(0, n_timesteps // 4, (x.shape[0],), device=device)
+                        ]
+                else:
+                    xc = [x1,]
+                    a = [torch.randint(0, n_timesteps // 4, (x.shape[0],), device=device),]
                 positions = [None, None]
 
             # Noise augmentation
