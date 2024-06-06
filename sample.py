@@ -196,7 +196,7 @@ def main(args):
                                                     z.shape,
                                                     z,
                                                     model_kwargs=model_kwargs,
-                                                    clip_denoised=True,
+                                                    clip_denoised=False,
                                                     progress=False,
                                                     device=device)
 
@@ -212,8 +212,10 @@ def main(args):
                 # Rescale and decode
                 B, L, C = xc[-2].shape
                 x2_non_V = xc[-2].reshape(B, L * sibling_num, -1).clone()
-                #decoded.append(torch.cat([samples[:, :, :125], x2_non_V], dim=-1).clone())
-                decoded.append(samples.clone())
+                if ag_flags[l]:
+                    decoded.append(samples.clone())
+                else:
+                    decoded.append(torch.cat([samples[:, :, :125], x2_non_V], dim=-1).clone())
             elif l == 0:
                 sample_ = torch.zeros(batch_size,
                                       length,
