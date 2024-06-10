@@ -25,6 +25,8 @@ from data_extensions import load_utils
 from torch.cuda.amp import autocast
 from transport import create_transport, Sampler
 
+from train import noise_conditioning
+
 
 def main(args):
     # Make directories
@@ -57,6 +59,7 @@ def main(args):
     fm_flags = []
     ag_flags = []
     noa_flags = []
+    rescale_flags = []
     m_ = None
     for l in range(3):
         config = config_list[l]
@@ -67,6 +70,7 @@ def main(args):
         fm_flags.append(fm_flag)
         noa_flag = config.model.get("noa_flag", False)
         noa_flags.append(noa_flag)
+        rescale_flags.append(config.model.get("rescale_flag", False))
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
@@ -176,14 +180,6 @@ def main(args):
             length = dataset.octree_root_num if l == 0 else dataset.octree_root_num * 8
             ch = in_ch_list[l]
 
-            # Debug part. Use Gt as the condition to see the value range issue
-            if debug_flag and l == 2:
-                _, x1_gt, _, _, _ = dataset[0]
-                x1_gt = x1_gt.unsqueeze(dim=0)
-                B, L, C = x1_gt.shape
-                x1_gt = x1_gt[:, :, 125:]
-                x1_gt = x1_gt.reshape(B, L // sibling_num, -1).contiguous()
-                xc = [x1_gt.to(device).clone(),]
 
             # Random input
             z = torch.randn(batch_size,
@@ -194,6 +190,18 @@ def main(args):
             a = [torch.zeros((z.shape[0],) , dtype=torch.int64, device=device) for _ in range(l)]
             if noa_flags[l] and l > 0:
                 a = [None,]
+
+            # Debug part. Use Gt as the condition to see the value range issue
+            if debug_flag and l == 2:
+                _, x1_gt, _, _, _ = dataset[0]
+                x1_gt = x1_gt.unsqueeze(dim=0)
+                B, L, C = x1_gt.shape
+                x1_gt = x1_gt[:, :, 125:]
+                x1_gt = x1_gt.reshape(B, L // sibling_num, -1).contiguous()
+                xc = [x1_gt.to(device).clone(),]
+                a_ = [torch.randint(0, 10, (xc[0].shape[0],), device=device),]
+                xc = noise_conditioning(xc, a_, sampler_list[l])
+
             model_kwargs = dict(a=a,
                                 y=None,
                                 x0=xc,
@@ -223,18 +231,26 @@ def main(args):
                                                     device=device)
 
             # Append the generated latents for the following generation
-            samples = samples.float().clip_(0, 1)
+            if not rescale_flags[l]:
+                samples = samples.float().clip_(0, 1)
+            else:
+                samples = samples.float().clip_(-1, 1)
+                samples = (samples + 1.0) / 2.0
+                samples = samples.detach()
 
             if l == 1:
                 B, L, C = samples.shape
                 samples = samples.reshape(B, L // sibling_num, -1).contiguous()
                 x2_non_V = samples.detach()
-            xc.append(samples.clone())
+            if not rescale_flags[l]:
+                xc.append(samples.clone())
+            else:
+                xc.append(samples * 2.0 - 1.0)
+
             if noa_flags[l] and l > 0:
                 xc = [xc[-1],]
 
             if l == 2:
-                import pdb; pdb.set_trace()
                 # Rescale and decode
                 B, L, C = x2_non_V.shape
                 x2_non_V = x2_non_V.reshape(B, L * sibling_num, -1).clone()
