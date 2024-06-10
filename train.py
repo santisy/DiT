@@ -212,6 +212,7 @@ def main(args):
     ag_flag = config.model.get("ag_flag", False)
     fm_flag = config.model.get("fm_flag", False) # Flow matching flag
     noa_flag = config.model.get("noa_flag", False)
+    rescale_flag = config.model.get("rescale_flag", False)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -326,6 +327,12 @@ def main(args):
             else:
                 x2 = x1_raw.detach().clone().to(device)
 
+            # Rescale stage
+            if rescale_flag:
+                x0 = (x0 * 2.0 - 1.0).detach()
+                x1 = (x1 * 2.0 - 1.0).detach()
+                x2 = (x2 * 2.0 - 1.0).detach()
+
             y = y.to(device)
 
             # According to the level_num set the training target x and the conditions
@@ -366,6 +373,8 @@ def main(args):
                 loss = edm_loss(model, x, model_kwargs=model_kwargs)
             else:
                 xc = noise_conditioning(xc, a, diffusion)
+                if rescale_flag:
+                    xc = [xc_.clip_(-1.0, 1.0).detach() for xc_ in xc]    
                 t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
                 with autocast(enabled=not args.no_mixed_pr):
                     loss_dict = diffusion.training_losses(model, x, t,

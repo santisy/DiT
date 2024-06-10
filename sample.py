@@ -46,6 +46,7 @@ def main(args):
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    debug_flag = args.debug
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
@@ -124,6 +125,7 @@ def main(args):
             pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
             level_num=l,
             sibling_num=sibling_num,
+            flow_flag=fm_flag,
             no_a_embed=noa_flag
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
@@ -174,6 +176,15 @@ def main(args):
             length = dataset.octree_root_num if l == 0 else dataset.octree_root_num * 8
             ch = in_ch_list[l]
 
+            # Debug part. Use Gt as the condition to see the value range issue
+            if debug_flag and l == 2:
+                _, x1_gt, _, _, _ = dataset[0]
+                x1_gt = x1_gt.unsqueeze(dim=0)
+                B, L, C = x1_gt.shape
+                x1_gt = x1_gt[:, :, 125:]
+                x1_gt = x1_gt.reshape(B, L // sibling_num, -1).contiguous()
+                xc = [x1_gt.to(device).clone(),]
+
             # Random input
             z = torch.randn(batch_size,
                             length, 
@@ -217,18 +228,21 @@ def main(args):
             if l == 1:
                 B, L, C = samples.shape
                 samples = samples.reshape(B, L // sibling_num, -1).contiguous()
+                x2_non_V = samples.detach()
             xc.append(samples.clone())
             if noa_flags[l] and l > 0:
                 xc = [xc[-1],]
 
             if l == 2:
+                import pdb; pdb.set_trace()
                 # Rescale and decode
-                B, L, C = xc[-2].shape
-                x2_non_V = xc[-2].reshape(B, L * sibling_num, -1).clone()
-                if ag_flags[l]:
-                    decoded.append(samples.clone())
-                else:
-                    decoded.append(torch.cat([samples[:, :, :125], x2_non_V], dim=-1).clone())
+                B, L, C = x2_non_V.shape
+                x2_non_V = x2_non_V.reshape(B, L * sibling_num, -1).clone()
+
+                #if ag_flags[l]:
+                #    decoded.append(samples.clone())
+                #else:
+                decoded.append(torch.cat([samples[:, :, :125], x2_non_V], dim=-1).clone())
             elif l == 0:
                 sample_ = torch.zeros(batch_size,
                                       length,
@@ -274,5 +288,7 @@ if __name__ == "__main__":
     parser.add_argument("--only-l0", action="store_true",
                         help="Only inference the l1")
     parser.add_argument("--clip-denoised", action="store_true")
+    parser.add_argument("-d", "--debug", action="store_true",
+                        help="The debug flag.")
     args = parser.parse_args()
     main(args)
