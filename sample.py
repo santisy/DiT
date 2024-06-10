@@ -70,7 +70,8 @@ def main(args):
         fm_flags.append(fm_flag)
         noa_flag = config.model.get("noa_flag", False)
         noa_flags.append(noa_flag)
-        rescale_flags.append(config.model.get("rescale_flag", False))
+        rescale_flag = config.model.get("rescale_flag", False)
+        rescale_flags.append(rescale_flag)
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
@@ -130,7 +131,8 @@ def main(args):
             level_num=l,
             sibling_num=sibling_num,
             flow_flag=fm_flag,
-            no_a_embed=noa_flag
+            no_a_embed=noa_flag,
+            rescale_flag=rescale_flag
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
@@ -189,7 +191,7 @@ def main(args):
                             device=device)
             a = [torch.zeros((z.shape[0],) , dtype=torch.int64, device=device) for _ in range(l)]
             if noa_flags[l] and l > 0:
-                a = [None,]
+                a = [a[-1],]
 
             # Debug part. Use Gt as the condition to see the value range issue
             if debug_flag and l == 2:

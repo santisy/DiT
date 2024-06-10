@@ -41,6 +41,7 @@ class PlainModel(nn.Module):
                  condition_node_dim=[],
                  flow_flag=False,
                  no_a_embed=False,
+                 rescale_flag=False,
                  **kwargs
                  ):
 
@@ -51,6 +52,7 @@ class PlainModel(nn.Module):
         self.condition_node_dim = condition_node_dim
         self.no_a_embed = no_a_embed
         self.flow_flag = flow_flag
+        self.rescale_flag = rescale_flag
 
         layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
                                            nhead=num_heads,
@@ -85,7 +87,7 @@ class PlainModel(nn.Module):
             self.a_embed_list = nn.ModuleList()
             self.c_embed_list = nn.ModuleList()
             for c_nd in condition_node_dim:
-                if not no_a_embed:
+                if not no_a_embed or rescale_flag:
                     self.a_embed_list.append(nn.Sequential(
                         nn.Linear(self.embed_dim, self.embed_dim),
                         nn.LayerNorm(self.embed_dim),
@@ -118,7 +120,7 @@ class PlainModel(nn.Module):
             # Noise augmentation level `a`, and previous condition embedding `c`
             for a_, xc_, a_embed, c_embed in zip(
                 a, x0, self.a_embed_list, self.c_embed_list):
-                if not self.no_a_embed:
+                if not self.no_a_embed or self.rescale_flag:
                     a_embeded = a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
                     other_embed_accumulate = other_embed_accumulate + a_embeded
                 xc_embeded = c_embed(xc_)

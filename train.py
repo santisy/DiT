@@ -253,7 +253,8 @@ def main(args):
         level_num=level_num,
         sibling_num=sibling_num,
         flow_flag=fm_flag,
-        no_a_embed=noa_flag
+        no_a_embed=noa_flag,
+        rescale_flag=rescale_flag
     ).to(device)
 
     if fm_flag:
@@ -345,7 +346,7 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, n_timesteps // 4, (x.shape[0],), device=device),]
+                a = [torch.randint(0, n_timesteps // 5, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
