@@ -3,6 +3,7 @@
 #     ADM:   https://github.com/openai/guided-diffusion/blob/main/guided_diffusion
 #     IDDPM: https://github.com/openai/improved-diffusion/blob/main/improved_diffusion/gaussian_diffusion.py
 
+import torch
 from . import gaussian_diffusion as gd
 from .gaussian_diffusion import rescale_zero_terminal_snr
 from .respace import SpacedDiffusion, space_timesteps
@@ -24,7 +25,9 @@ def create_diffusion(
 
     # Rescale to zero-terminal SNR
     if zero_terminal:
-        betas = rescale_zero_terminal_snr(betas)
+        old_betas = torch.from_numpy(betas)
+        betas = rescale_zero_terminal_snr(old_betas)
+        betas = betas.numpy()
 
     # Loss Type
     if use_kl:
