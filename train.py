@@ -346,7 +346,7 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, 30, (x.shape[0],), device=device),]
+                a = [torch.randint(0, n_timesteps // 5, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
@@ -354,12 +354,12 @@ def main(args):
                 x1 = x1.reshape(B, L // sibling_num, -1)
                 if not noa_flag:
                     xc = [x0, x1]
-                    a = [torch.randint(0, 30, (x.shape[0],), device=device),
-                        torch.randint(0, 20, (x.shape[0],), device=device)
+                    a = [torch.randint(0, n_timesteps // 5, (x.shape[0],), device=device),
+                        torch.randint(0, n_timesteps // 5, (x.shape[0],), device=device)
                         ]
                 else:
                     xc = [x1,]
-                    a = [torch.randint(0, 20, (x.shape[0],), device=device),]
+                    a = [torch.randint(0, n_timesteps // 5, (x.shape[0],), device=device),]
                 positions = [None, None]
 
             # Noise augmentation

@@ -87,15 +87,12 @@ class PlainModel(nn.Module):
             self.a_embed_list = nn.ModuleList()
             self.c_embed_list = nn.ModuleList()
             for c_nd in condition_node_dim:
-                if not no_a_embed or rescale_flag:
-                    self.a_embed_list.append(nn.Sequential(
-                        nn.Linear(self.embed_dim, self.embed_dim),
-                        nn.LayerNorm(self.embed_dim),
-                        nn.SiLU(),
-                        nn.Linear(self.embed_dim, self.embed_dim))
-                    )
-                else:
-                    self.a_embed_list.append(nn.Identity())
+                self.a_embed_list.append(nn.Sequential(
+                    nn.Linear(self.embed_dim, self.embed_dim),
+                    nn.LayerNorm(self.embed_dim),
+                    nn.SiLU(),
+                    nn.Linear(self.embed_dim, self.embed_dim))
+                )
                 self.c_embed_list.append(nn.Sequential(
                     nn.Linear(c_nd, self.embed_dim),
                     nn.LayerNorm(self.embed_dim),
@@ -120,9 +117,8 @@ class PlainModel(nn.Module):
             # Noise augmentation level `a`, and previous condition embedding `c`
             for a_, xc_, a_embed, c_embed in zip(
                 a, x0, self.a_embed_list, self.c_embed_list):
-                if not self.no_a_embed or self.rescale_flag:
-                    a_embeded = a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
-                    other_embed_accumulate = other_embed_accumulate + a_embeded
+                a_embeded = a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
+                other_embed_accumulate = other_embed_accumulate + a_embeded
                 xc_embeded = c_embed(xc_)
                 L_xc = xc_embeded.size(1)
                 xc_embeded = torch.repeat_interleave(xc_embeded, L_x // L_xc, dim=1)
