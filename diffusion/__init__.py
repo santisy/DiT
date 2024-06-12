@@ -4,6 +4,7 @@
 #     IDDPM: https://github.com/openai/improved-diffusion/blob/main/improved_diffusion/gaussian_diffusion.py
 
 from . import gaussian_diffusion as gd
+from .gaussian_diffusion import rescale_zero_terminal_snr
 from .respace import SpacedDiffusion, space_timesteps
 
 
@@ -14,11 +15,16 @@ def create_diffusion(
     sigma_small=False,
     predict_xstart=False,
     predict_v=False,
+    zero_terminal=False,
     learn_sigma=True,
     rescale_learned_sigmas=False,
     diffusion_steps=1000
 ):
     betas = gd.get_named_beta_schedule(noise_schedule, diffusion_steps)
+
+    # Rescale to zero-terminal SNR
+    if zero_terminal:
+        betas = rescale_zero_terminal_snr(betas)
 
     # Loss Type
     if use_kl:
