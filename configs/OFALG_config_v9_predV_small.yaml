@@ -10,6 +10,7 @@ model:
     sibling_num: [1, 2, 2]
     use_EDM: false
     plain_model: true
+    noa_flag: true
 
 data:
     num_classes: -1
