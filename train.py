@@ -213,6 +213,7 @@ def main(args):
     fm_flag = config.model.get("fm_flag", False) # Flow matching flag
     noa_flag = config.model.get("noa_flag", False)
     rescale_flag = config.model.get("rescale_flag", False)
+    low_a_flag = config.model.get("low_a_flag", False)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -229,6 +230,12 @@ def main(args):
         learn_sigma = False
     else:
         model_class = DiT
+
+    # Determine the noise conditional level
+    if not low_a_flag:
+        max_a = n_timesteps // 10
+    else:
+        max_a = 15
 
     # Create DiT model
     model = model_class(
@@ -346,7 +353,7 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, n_timesteps // 10, (x.shape[0],), device=device),]
+                a = [torch.randint(0, max_a, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
@@ -354,12 +361,12 @@ def main(args):
                 x1 = x1.reshape(B, L // sibling_num, -1)
                 if not noa_flag:
                     xc = [x0, x1]
-                    a = [torch.randint(0, n_timesteps // 10, (x.shape[0],), device=device),
-                        torch.randint(0, n_timesteps // 10, (x.shape[0],), device=device)
+                    a = [torch.randint(0, max_a, (x.shape[0],), device=device),
+                        torch.randint(0, max_a, (x.shape[0],), device=device)
                         ]
                 else:
                     xc = [x1,]
-                    a = [torch.randint(0, n_timesteps // 10, (x.shape[0],), device=device),]
+                    a = [torch.randint(0, max_a, (x.shape[0],), device=device),]
                 positions = [None, None]
 
             # Noise augmentation
