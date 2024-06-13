@@ -105,7 +105,7 @@ def noise_conditioning(x_list, a_list, sampler, fm_flag=False):
 
 # Parameters for the learning rate schedule
 warmup_steps = 5000      # Number of steps to warm up
-total_steps = 200000      # Total number of training steps
+total_steps = 500000      # Total number of training steps
 final_lr_factor = 0.2    # Final learning rate is 0.1 * LR_{target}
 
 # Lambda function to adjust learning rate
