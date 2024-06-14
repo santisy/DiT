@@ -422,7 +422,7 @@ class DiT(nn.Module):
         self.t_embedder = TimestepEmbedder(hidden_size)
         # Augmentation level embedder
         self.a_embedder = nn.ModuleList()
-        for _ in range(len(condition_node_num)):
+        for _ in range(len(condition_node_dim)):
             self.a_embedder.append(TimestepEmbedder(hidden_size))
         if num_classes > 0:
             self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
@@ -435,7 +435,7 @@ class DiT(nn.Module):
                               hidden_size,
                               num_heads,
                               mlp_ratio=mlp_ratio,
-                              cond_num=len(condition_node_num),
+                              cond_num=len(condition_node_dim),
                               add_inject=add_inject,
                               PEV=self.pos_embedding_version
                               )
