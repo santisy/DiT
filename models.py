@@ -91,6 +91,7 @@ class PreviousNodeEmbedder(nn.Module):
             self.mlp_list.append(
                 nn.Sequential(
                 nn.Linear(nd, hidden_size, bias=True),
+                nn.LayerNorm(hidden_size),
                 nn.SiLU(),
                 )
             )
@@ -114,6 +115,7 @@ class TimestepEmbedder(nn.Module):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size, hidden_size, bias=True),
+            nn.LayerNorm(hidden_size),
             nn.SiLU(),
             nn.Linear(hidden_size, hidden_size, bias=True),
         )
@@ -483,10 +485,10 @@ class DiT(nn.Module):
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
-        nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
+        nn.init.normal_(self.t_embedder.mlp[3].weight, std=0.02)
         for a_embedder in self.a_embedder:
             nn.init.normal_(a_embedder.mlp[0].weight, std=0.02)
-            nn.init.normal_(a_embedder.mlp[2].weight, std=0.02)
+            nn.init.normal_(a_embedder.mlp[3].weight, std=0.02)
 
         # IntiaLize node embedder
         for mlp in self.n_embedder.mlp_list:
