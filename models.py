@@ -273,6 +273,8 @@ class DiTBlock(nn.Module):
                     if not real_noa:
                         self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
                                                             nn.Linear(hidden_size, 3 * hidden_size, bias=True)))
+                    else:
+                        self.adaLN_modulation_mca_list.append(nn.Identity())
                     self.mlp_list.append(nn.Linear(hidden_size, hidden_size))
 
         self.adaLN_modulation = nn.Sequential(
