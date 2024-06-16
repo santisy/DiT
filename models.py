@@ -303,6 +303,9 @@ class DiTBlock(nn.Module):
                     if not self.real_noa:
                         gate_mca, shift_mca, scale_mca = adaMM(a).chunk(3, dim=1)
                         x = x + gate_mca.unsqueeze(1) * mlp_(modulate(norm0(add_), shift_mca, scale_mca))
+                    else:
+                        x = x + norm0(mlp_(add_))
+
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
