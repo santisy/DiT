@@ -231,11 +231,13 @@ class DiTBlock(nn.Module):
                  cross_attention=False,
                  add_inject=False,
                  PEV="v1",
+                 real_noa=False,
                  **block_kwargs):
         super().__init__()
         self.cross_attention = cross_attention
         self.add_inject = add_inject
         self.cond_num = cond_num
+        self.real_noa = real_noa
         self.PEV = PEV
 
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -268,8 +270,9 @@ class DiTBlock(nn.Module):
                 self.mlp_list = nn.ModuleList()
                 for _ in range(cond_num):
                     self.norm0_list.append(nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6))
-                    self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
-                                                          nn.Linear(hidden_size, 3 * hidden_size, bias=True)))
+                    if not real_noa:
+                        self.adaLN_modulation_mca_list.append(nn.Sequential(nn.SiLU(),
+                                                            nn.Linear(hidden_size, 3 * hidden_size, bias=True)))
                     self.mlp_list.append(nn.Linear(hidden_size, hidden_size))
 
         self.adaLN_modulation = nn.Sequential(
@@ -295,8 +298,9 @@ class DiTBlock(nn.Module):
                         add_ = x0_
                     else:
                         add_ = torch.repeat_interleave(x0_, seq_x // seq_0, dim=1)
-                    gate_mca, shift_mca, scale_mca = adaMM(a).chunk(3, dim=1)
-                    x = x + gate_mca.unsqueeze(1) * mlp_(modulate(norm0(add_), shift_mca, scale_mca))
+                    if not self.real_noa:
+                        gate_mca, shift_mca, scale_mca = adaMM(a).chunk(3, dim=1)
+                        x = x + gate_mca.unsqueeze(1) * mlp_(modulate(norm0(add_), shift_mca, scale_mca))
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
@@ -448,7 +452,8 @@ class DiT(nn.Module):
                               mlp_ratio=mlp_ratio,
                               cond_num=len(condition_node_dim),
                               add_inject=add_inject,
-                              PEV=self.pos_embedding_version
+                              PEV=self.pos_embedding_version,
+                              real_noa=real_noa
                               )
         for i in range(depth):
             if i not in cross_layers:
@@ -545,9 +550,8 @@ class DiT(nn.Module):
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding
         t = self.t_embedder(t)                   # (N, D)
         a_out = []
-        if not self.real_noa:
-            for a_, a_embedder in zip(a, self.a_embedder):
-                a_out.append(a_embedder(a_))
+        for a_, a_embedder in zip(a, self.a_embedder):
+            a_out.append(a_embedder(a_))
         if self.y_embedder is not None:
             y = self.y_embedder(y, self.training)    # (N, D)
         else:
