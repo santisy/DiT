@@ -551,7 +551,10 @@ class DiT(nn.Module):
         t = self.t_embedder(t)                   # (N, D)
         a_out = []
         for a_, a_embedder in zip(a, self.a_embedder):
-            a_out.append(a_embedder(a_))
+            if not self.real_noa:
+                a_out.append(a_embedder(a_))
+            else:
+                a_out.append(0)
         if self.y_embedder is not None:
             y = self.y_embedder(y, self.training)    # (N, D)
         else:
