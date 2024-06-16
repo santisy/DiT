@@ -239,7 +239,11 @@ class DiTBlock(nn.Module):
         self.PEV = PEV
 
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
+        self.attn = Attention(hidden_size,
+                              num_heads=num_heads,
+                              qkv_bias=True,
+                              attn_drop=0.1,
+                              **block_kwargs)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
@@ -388,6 +392,7 @@ class DiT(nn.Module):
         level_num=0,
         sibling_num=8,
         learned_pos_embedding=False,
+        real_noa=False,
         **kwargs
     ):
         super().__init__()
@@ -404,6 +409,7 @@ class DiT(nn.Module):
         self.pos_embedding_version = pos_embedding_version
         self.level_num = level_num
         self.learned_pos_embedding = learned_pos_embedding
+        self.real_noa = real_noa
 
         if learned_pos_embedding and level_num == 0:
             self.learned_PE = nn.Embedding(256 // sibling_num, hidden_size)
@@ -425,7 +431,10 @@ class DiT(nn.Module):
         # Augmentation level embedder
         self.a_embedder = nn.ModuleList()
         for _ in range(len(condition_node_dim)):
-            self.a_embedder.append(TimestepEmbedder(hidden_size))
+            if not real_noa:
+                self.a_embedder.append(TimestepEmbedder(hidden_size))
+            else:
+                self.a_embedder.append(nn.Identity())
         if num_classes > 0:
             self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         else:
@@ -487,8 +496,9 @@ class DiT(nn.Module):
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
         nn.init.normal_(self.t_embedder.mlp[3].weight, std=0.02)
         for a_embedder in self.a_embedder:
-            nn.init.normal_(a_embedder.mlp[0].weight, std=0.02)
-            nn.init.normal_(a_embedder.mlp[3].weight, std=0.02)
+            if not self.real_noa:
+                nn.init.normal_(a_embedder.mlp[0].weight, std=0.02)
+                nn.init.normal_(a_embedder.mlp[3].weight, std=0.02)
 
         # IntiaLize node embedder
         for mlp in self.n_embedder.mlp_list:
@@ -535,8 +545,9 @@ class DiT(nn.Module):
         x0 = self.n_embedder(x0, PEs)               # Previous node embedding
         t = self.t_embedder(t)                   # (N, D)
         a_out = []
-        for a_, a_embedder in zip(a, self.a_embedder):
-            a_out.append(a_embedder(a_))
+        if not self.real_noa:
+            for a_, a_embedder in zip(a, self.a_embedder):
+                a_out.append(a_embedder(a_))
         if self.y_embedder is not None:
             y = self.y_embedder(y, self.training)    # (N, D)
         else:

@@ -42,6 +42,7 @@ class PlainModel(nn.Module):
                  flow_flag=False,
                  no_a_embed=False,
                  rescale_flag=False,
+                 real_noa=False,
                  **kwargs
                  ):
 
@@ -53,6 +54,7 @@ class PlainModel(nn.Module):
         self.no_a_embed = no_a_embed
         self.flow_flag = flow_flag
         self.rescale_flag = rescale_flag
+        self.real_noa = real_noa
 
         layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
                                            nhead=num_heads,
@@ -87,12 +89,15 @@ class PlainModel(nn.Module):
             self.a_embed_list = nn.ModuleList()
             self.c_embed_list = nn.ModuleList()
             for c_nd in condition_node_dim:
-                self.a_embed_list.append(nn.Sequential(
-                    nn.Linear(self.embed_dim, self.embed_dim),
-                    nn.LayerNorm(self.embed_dim),
-                    nn.SiLU(),
-                    nn.Linear(self.embed_dim, self.embed_dim))
-                )
+                if not real_noa:
+                    self.a_embed_list.append(nn.Sequential(
+                        nn.Linear(self.embed_dim, self.embed_dim),
+                        nn.LayerNorm(self.embed_dim),
+                        nn.SiLU(),
+                        nn.Linear(self.embed_dim, self.embed_dim))
+                    )
+                else:
+                    self.a_embed_list.append(nn.Identity())
                 self.c_embed_list.append(nn.Sequential(
                     nn.Linear(c_nd, self.embed_dim),
                     nn.LayerNorm(self.embed_dim),
@@ -117,8 +122,9 @@ class PlainModel(nn.Module):
             # Noise augmentation level `a`, and previous condition embedding `c`
             for a_, xc_, a_embed, c_embed in zip(
                 a, x0, self.a_embed_list, self.c_embed_list):
-                a_embeded = a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
-                other_embed_accumulate = other_embed_accumulate + a_embeded
+                if not self.real_noa:
+                    a_embeded = a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
+                    other_embed_accumulate = other_embed_accumulate + a_embeded
                 xc_embeded = c_embed(xc_)
                 L_xc = xc_embeded.size(1)
                 xc_embeded = torch.repeat_interleave(xc_embeded, L_x // L_xc, dim=1)

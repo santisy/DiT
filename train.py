@@ -215,6 +215,7 @@ def main(args):
     noa_flag = config.model.get("noa_flag", False)
     rescale_flag = config.model.get("rescale_flag", False)
     low_a_flag = config.model.get("low_a_flag", False)
+    real_noa = config.model.get("real_noa", False)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -226,7 +227,12 @@ def main(args):
     elif level_num == 0: # Root positions and scales
         in_ch = 4
 
-    if config.model.get("plain_model", False):
+    plain_model_list = config.model.get("plain_model", False)
+    if isinstance(plain_model_list, (list, tuple)):
+        plain_model = plain_model_list[level_num]
+    else:
+        plain_model = plain_model_list
+    if plain_model:
         model_class = PlainModel
         learn_sigma = False
     else:
@@ -236,7 +242,7 @@ def main(args):
     if not low_a_flag:
         max_a = n_timesteps // 10
     else:
-        max_a = 15
+        max_a = 50
 
     # Create DiT model
     model = model_class(
@@ -262,7 +268,8 @@ def main(args):
         sibling_num=sibling_num,
         flow_flag=fm_flag,
         no_a_embed=noa_flag,
-        rescale_flag=rescale_flag
+        rescale_flag=rescale_flag,
+        real_noa=real_noa
     ).to(device)
 
     if fm_flag:

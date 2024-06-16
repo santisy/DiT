@@ -72,6 +72,7 @@ def main(args):
         noa_flags.append(noa_flag)
         rescale_flag = config.model.get("rescale_flag", False)
         rescale_flags.append(rescale_flag)
+        real_noa = config.model.get("real_noa", False)
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
@@ -102,7 +103,12 @@ def main(args):
             in_ch = 4
             in_ch_list.append(in_ch)
 
-        if config.model.get("plain_model", False):
+        plain_model_list = config.model.get("plain_model", False)
+        if isinstance(plain_model_list, (list, tuple)):
+            plain_model = plain_model_list[l]
+        else:
+            plain_model = plain_model_list
+        if plain_model:
             model_class = PlainModel
             learn_sigma = False
         else:
@@ -132,7 +138,8 @@ def main(args):
             sibling_num=sibling_num,
             flow_flag=fm_flag,
             no_a_embed=noa_flag,
-            rescale_flag=rescale_flag
+            rescale_flag=rescale_flag,
+            real_noa=real_noa
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
@@ -171,6 +178,9 @@ def main(args):
         scales = []
         decoded = []
         for l in range(3):
+            if debug_flag and l != 2:
+                continue
+
             # Random generator
             seed = i * 3 + l
             if args.l0_seed is not None and l == 0:
@@ -193,16 +203,20 @@ def main(args):
             if noa_flags[l] and l > 0:
                 a = [a[-1],]
 
-            # Debug part. Use Gt as the condition to see the value range issue
+
             if debug_flag and l == 2:
-                _, x1_gt, _, _, _ = dataset[0]
+                x0_gt, x1_gt, _, _, _ = dataset[0]
+                x0_gt = x0_gt.unsqueeze(dim=0)
                 x1_gt = x1_gt.unsqueeze(dim=0)
+                x0_gt = torch.cat([x0_gt[:, :, -7].unsqueeze(dim=-1),
+                                   x0_gt[:, :, -3:]], dim=-1).detach().clone().to(device)
                 B, L, C = x1_gt.shape
                 x1_gt = x1_gt[:, :, 125:]
                 x1_gt = x1_gt.reshape(B, L // sibling_num, -1).contiguous()
                 xc = [x1_gt.to(device).clone(),]
-                a_ = [torch.randint(0, 10, (xc[0].shape[0],), device=device),]
-                xc = noise_conditioning(xc, a_, sampler_list[l])
+
+            if rescale_flags[l]:
+                xc = [xc_ * 2.0 - 1.0 for xc_ in xc]
 
             model_kwargs = dict(a=a,
                                 y=None,
@@ -232,6 +246,9 @@ def main(args):
                                                     progress=False,
                                                     device=device)
 
+            if args.debug and l == 2:
+                import pdb; pdb.set_trace()
+
             # Append the generated latents for the following generation
             if not rescale_flags[l]:
                 samples = samples.float().clip_(0, 1)
@@ -244,10 +261,7 @@ def main(args):
                 B, L, C = samples.shape
                 samples = samples.reshape(B, L // sibling_num, -1).contiguous()
                 x2_non_V = samples.detach()
-            if not rescale_flags[l]:
-                xc.append(samples.clone())
-            else:
-                xc.append(samples * 2.0 - 1.0)
+            xc.append(samples.clone())
 
             if noa_flags[l] and l > 0:
                 xc = [xc[-1],]

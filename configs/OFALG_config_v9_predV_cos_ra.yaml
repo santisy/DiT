@@ -1,0 +1,35 @@
+model:
+    depth: [24, 24, 24]
+    mlp_ratio: 2.0
+    cross_layers: [0, 4, 8, 12, 16, 20]
+    num_heads: 16
+    add_inject: true
+    pos_emedding_version: "v2"
+    hidden_sizes: [1024, 1024, 1024]
+    align_gen: [true, true, true]
+    sibling_num: [1, 2, 2]
+    use_EDM: false
+    plain_model: [true, true, false]
+    noa_flag: true
+    low_a_flag: true
+    real_noa: true
+
+data:
+    num_classes: -1
+    octree_root_num: 256
+    unit_length_list: [361, 139]
+
+diffusion:
+    noise_schedule: "squaredcos_cap_v2"
+    learn_sigma: false
+    diffusion_steps: 1000
+    predict_v: true
+    zero_terminal: true
+
+vae:
+    layer_n: 6
+    in_ch: 64
+    latent_ch: 128
+    latent_ratio: 4
+    quant_code_n: 1024
+    linear: false
