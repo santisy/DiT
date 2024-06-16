@@ -115,6 +115,7 @@ def lr_lambda(current_step: int):
         return float(current_step) / float(max(1, warmup_steps))
     # Linearly decrease the learning rate to `final_lr_factor` * LR_{target} after the warmup phase
     progress = (current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+    progress = min(progress, 1)  # Ensure progress does not exceed 1
     return final_lr_factor + (1 - final_lr_factor) * (1 - progress)
 
 #################################################################################
