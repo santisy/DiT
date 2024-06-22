@@ -134,6 +134,7 @@ def main(args):
     """
     Trains a new DiT model.
     """
+    torch.multiprocessing.set_sharing_strategy('file_descriptor')
     parent_pid = psutil.Process().pid
 
     if args.work_on_tmp_dir:
