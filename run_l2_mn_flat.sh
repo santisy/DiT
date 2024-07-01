@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --time=71:00:0
-#SBATCH --nodes=4
+#SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=9
+#SBATCH --cpus-per-task=5
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a100:1
-#SBATCH --job-name="l1_0626_plain"
+#SBATCH --job-name="l2_0630_flat_DiT"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # List out some useful information (optional)
@@ -66,13 +66,13 @@ srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --rdzv_id="$SLURM_JOBID" \
     --rdzv_backend=c10d \
     --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
-    train.py --exp-id l1_0626_plain \
+    train.py --exp-id l2_0630_flat_DiT \
     --epoch 4000 \
-    --global-batch-size 128 \
-    --config-file configs/OFALG_config_v9_predV_cos_ra.yaml \
+    --global-batch-size 96 \
+    --config-file configs/OFALG_config_v9_predV_cos_ra_flat.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane_discreteL1 \
-    --num-workers 32 \
+    --num-workers 40 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
     --gradient-clipping \
-    --level-num 1
+    --level-num 2

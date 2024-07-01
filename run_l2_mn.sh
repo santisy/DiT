@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --time=71:00:0
-#SBATCH --nodes=4
+#SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=17
+#SBATCH --cpus-per-task=9
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a100:1
-#SBATCH --job-name="l2_0601_plain_ag"
+#SBATCH --job-name="l2_0626_DiT"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # List out some useful information (optional)
@@ -32,7 +32,7 @@ export NCCL_DEBUG=INFO  # Enable NCCL debug logging
 
 # Copy data to local
 WORK_DIR=$(pwd)
-DATA_ZIP_PATH=./datasets/shapenet_airplane_l1only_abs.zip
+DATA_ZIP_PATH=./datasets/shapenet_airplane_discreteL1.zip
 DATA_ZIP_FILE=$(basename ${DATA_ZIP_PATH})
 
 # Use srun to copy data to each node's SLURM_TMPDIR
@@ -66,12 +66,12 @@ srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --rdzv_id="$SLURM_JOBID" \
     --rdzv_backend=c10d \
     --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
-    train.py --exp-id l2_0601_plain_ag \
+    train.py --exp-id l2_0626_DiT \
     --epoch 4000 \
-    --global-batch-size 128 \
-    --config-file configs/OFALG_config_v9_ag_nl_small.yaml \
-    --data-root ${SLURM_TMPDIR}/shapenet_airplane_l1only_abs \
-    --num-workers 64 \
+    --global-batch-size 144 \
+    --config-file configs/OFALG_config_v9_predV_cos_ra.yaml \
+    --data-root ${SLURM_TMPDIR}/shapenet_airplane_discreteL1 \
+    --num-workers 48 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
     --gradient-clipping \
