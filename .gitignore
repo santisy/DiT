@@ -3,6 +3,15 @@
 __pycache__
 */**/__pycache__
 
+*.bin
+
 datasets
 test_imgs
 training_runs
+vae_recon_dir
+exported_out
+
+plot_dir/*.txt
+plot_dir/*.log
+plot_dir/*.pdf
+

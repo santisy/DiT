@@ -6,8 +6,8 @@ model:
     add_inject: true
     pos_emedding_version: "v2"
     hidden_sizes: [1024, 1024, 1024]
-    align_gen: [true, true, true]
-    sibling_num: [1, 2, 2]
+    align_gen: [false, false, true]
+    sibling_num: [1, 1, 2]
     use_EDM: false
     plain_model: [true, true, false]
     noa_flag: true

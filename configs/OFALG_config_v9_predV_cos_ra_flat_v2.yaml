@@ -13,6 +13,8 @@ model:
     noa_flag: true
     low_a_flag: true
     real_noa: true
+    max_a: 10
+    selftt: true
 
 data:
     num_classes: -1
