@@ -217,6 +217,7 @@ def main(args):
     rescale_flag = config.model.get("rescale_flag", False)
     low_a_flag = config.model.get("low_a_flag", False)
     real_noa = config.model.get("real_noa", False)
+    selftt = config.model.get("selftt", True)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -270,7 +271,8 @@ def main(args):
         flow_flag=fm_flag,
         no_a_embed=noa_flag,
         rescale_flag=rescale_flag,
-        real_noa=real_noa
+        real_noa=real_noa,
+        selftt=selftt
     ).to(device)
 
     if fm_flag:

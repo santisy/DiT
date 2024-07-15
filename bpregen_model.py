@@ -1,8 +1,8 @@
 import math
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from transformer_module import PreNormSelfAttention
+
 
 def sincos_embedding(input, dim, max_period=10000):
     """
@@ -43,6 +43,7 @@ class PlainModel(nn.Module):
                  no_a_embed=False,
                  rescale_flag=False,
                  real_noa=False,
+                 selftt=False,
                  **kwargs
                  ):
 
@@ -56,13 +57,19 @@ class PlainModel(nn.Module):
         self.rescale_flag = rescale_flag
         self.real_noa = real_noa
 
-        layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
-                                           nhead=num_heads,
-                                           norm_first=True,
-                                           dim_feedforward=int(mlp_ratio * hidden_size),
-                                           dropout=0.1,
-                                           batch_first=True)
-        self.net = nn.TransformerEncoder(layer, depth, nn.LayerNorm(self.embed_dim))
+        if not selftt:
+            layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
+                                               nhead=num_heads,
+                                               norm_first=True,
+                                               dim_feedforward=int(mlp_ratio * hidden_size),
+                                               dropout=0.1,
+                                               batch_first=True)
+            self.net = nn.TransformerEncoder(layer, depth, nn.LayerNorm(self.embed_dim))
+        else:
+            self.net = nn.Sequential(*[PreNormSelfAttention(self.embed_dim,
+                                                            num_heads,
+                                                            self.embed_dim // num_heads,
+                                                            dropout=0.1) for _ in range(depth)])
 
         self.p_embed = nn.Sequential(
             nn.Linear(self.in_ch, self.embed_dim),
@@ -145,8 +152,24 @@ class PlainModel(nn.Module):
         x_embeds = self.p_embed(x)
     
         tokens = x_embeds + time_embeds + other_embed_accumulate + PE
-        output = self.net(src=tokens)
+        output = self.net(tokens)
         pred = self.fc_out(output)
         pred = pred.reshape(B, L, C)
 
         return pred
+
+
+if __name__ == "__main__":
+    net = PlainModel(4,
+                     depth=12,
+                     num_heads=16,
+                     hidden_size=512,
+                     no_a_embed=True,
+                     real_noa=True,
+                     selftt=True).cuda()
+
+    t = torch.randint(0, 1024, (4,)).cuda()
+    x = torch.randn(4, 256, 4).cuda()
+
+    out = net(x, t)
+    print(out.shape)

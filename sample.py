@@ -73,6 +73,7 @@ def main(args):
         rescale_flag = config.model.get("rescale_flag", False)
         rescale_flags.append(rescale_flag)
         real_noa = config.model.get("real_noa", False)
+        selftt = config.model.get("selftt", False)
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
@@ -139,13 +140,14 @@ def main(args):
             flow_flag=fm_flag,
             no_a_embed=noa_flag,
             rescale_flag=rescale_flag,
-            real_noa=real_noa
+            real_noa=real_noa,
+            selftt=selftt
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-        model.load_state_dict(model_ckpt["model"])
+        model.load_state_dict(model_ckpt["ema"])
         model.to(device)
         model.eval()  # important!
         model_list.append(model)
@@ -271,10 +273,10 @@ def main(args):
                 B, L, C = x2_non_V.shape
                 x2_non_V = x2_non_V.reshape(B, L * sibling_num, -1).clone()
 
-                #if ag_flags[l]:
-                #    decoded.append(samples.clone())
-                #else:
-                decoded.append(torch.cat([samples[:, :, :125], x2_non_V], dim=-1).clone())
+                if ag_flags[l]:
+                    decoded.append(samples.clone())
+                else:
+                    decoded.append(torch.cat([samples[:, :, :125], x2_non_V], dim=-1).clone())
             elif l == 0:
                 sample_ = torch.zeros(batch_size,
                                       length,
