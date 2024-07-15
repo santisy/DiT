@@ -25,8 +25,6 @@ except:
     from torch.nn.functional import scaled_dot_product_attention as sdp_atten_fn
     print("\033[92m Use pytorch attention.\033[00m")
 
-from utils.positional_embedding import fourier_positional_encoding
-
 class Attention(nn.Module):
 
     def __init__(

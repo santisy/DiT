@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 from transformer_module import PreNormSelfAttention
+from transformer_module import GEGLU
 
 
 def sincos_embedding(input, dim, max_period=10000):
@@ -69,6 +70,7 @@ class PlainModel(nn.Module):
             self.net = nn.Sequential(*[PreNormSelfAttention(self.embed_dim,
                                                             num_heads,
                                                             self.embed_dim // num_heads,
+                                                            mult=mlp_ratio,
                                                             dropout=0.1) for _ in range(depth)])
 
         self.p_embed = nn.Sequential(
@@ -160,16 +162,18 @@ class PlainModel(nn.Module):
 
 
 if __name__ == "__main__":
+    from torch.cuda.amp import autocast
     net = PlainModel(4,
-                     depth=12,
-                     num_heads=16,
-                     hidden_size=512,
-                     no_a_embed=True,
-                     real_noa=True,
-                     selftt=True).cuda()
+                    depth=12,
+                    num_heads=16,
+                    hidden_size=512,
+                    no_a_embed=True,
+                    real_noa=True,
+                    selftt=True).cuda()
 
     t = torch.randint(0, 1024, (4,)).cuda()
     x = torch.randn(4, 256, 4).cuda()
 
-    out = net(x, t)
+    with autocast(enabled=True):
+        out = net(x, t)
     print(out.shape)

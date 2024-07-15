@@ -218,6 +218,7 @@ def main(args):
     low_a_flag = config.model.get("low_a_flag", False)
     real_noa = config.model.get("real_noa", False)
     selftt = config.model.get("selftt", True)
+    max_a = config.model.get("max_a", 50)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -244,7 +245,7 @@ def main(args):
     if not low_a_flag:
         max_a = n_timesteps // 10
     else:
-        max_a = 50
+        max_a = max_a
 
     # Create DiT model
     model = model_class(

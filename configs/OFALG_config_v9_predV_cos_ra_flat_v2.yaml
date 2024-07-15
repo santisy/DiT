@@ -6,14 +6,15 @@ model:
     add_inject: true
     pos_emedding_version: "v2"
     hidden_sizes: [1024, 1024, 1024]
-    align_gen: [false, false, true]
-    sibling_num: [1, 1, 2]
+    align_gen: [false, false, false]
+    sibling_num: [1, 1, 1]
     use_EDM: false
-    plain_model: [true, true, false]
+    plain_model: [true, true, true]
     noa_flag: true
     low_a_flag: true
     real_noa: true
-    selftt: true
+    max_a: 10
+    activation: "geglu"
 
 data:
     num_classes: -1

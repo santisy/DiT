@@ -33,6 +33,7 @@ if len(extraction_times) > len(refinement_times):
 else:
     refinement_times = refinement_times[:len(extraction_times)]
 
+print(f"Parsed record number is {len(refinement_times)}")
 print(f"Extraction Time: {np.mean(extraction_times)}+-{2 * np.std(extraction_times)}")
 print(f"Refinement Time: {np.mean(refinement_times)}+-{2 * np.std(refinement_times)}")
 
@@ -65,5 +66,5 @@ fig.tight_layout()  # otherwise the right y-label is slightly clipped
 # Show the plot
 plt.show()
 
-import ace_tools as tools; tools.display_dataframe_to_user(name="Extraction and Refinement Times", dataframe=data)
+#import ace_tools as tools; tools.display_dataframe_to_user(name="Extraction and Refinement Times", dataframe=data)
 

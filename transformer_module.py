@@ -9,6 +9,12 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 
 from timm.models.layers import DropPath
+try:
+    from flash_attn import flash_attn_func as sdp_atten_fn
+    print("\033[92m Use flash attention.\033[00m")
+except:
+    from torch.nn.functional import scaled_dot_product_attention as sdp_atten_fn
+    print("\033[92m Use pytorch attention.\033[00m")
 
 def exists(val):
     return val is not None
@@ -80,27 +86,28 @@ class Attention(nn.Module):
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
 
     def forward(self, x, context = None, mask = None):
+        B, N, C = x.shape
         h = self.heads
 
         q = self.to_q(x)
         context = default(context, x)
         k, v = self.to_kv(context).chunk(2, dim = -1)
 
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h = h), (q, k, v))
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b n h d', h = h), (q, k, v))
+        out = sdp_atten_fn(q, k, v)
+        out = out.transpose(1, 2).reshape(B, N, C)
 
-        sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
+        #sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
+        #if exists(mask):
+        #    mask = rearrange(mask, 'b ... -> b (...)')
+        #    max_neg_value = -torch.finfo(sim.dtype).max
+        #    mask = repeat(mask, 'b j -> (b h) () j', h = h)
+        #    sim.masked_fill_(~mask, max_neg_value)
+        ## attention, what we cannot get enough of
+        #attn = sim.softmax(dim = -1)
+        #out = einsum('b i j, b j d -> b i d', attn, v)
+        #out = rearrange(out, '(b h) n d -> b n (h d)', h = h)
 
-        if exists(mask):
-            mask = rearrange(mask, 'b ... -> b (...)')
-            max_neg_value = -torch.finfo(sim.dtype).max
-            mask = repeat(mask, 'b j -> (b h) () j', h = h)
-            sim.masked_fill_(~mask, max_neg_value)
-
-        # attention, what we cannot get enough of
-        attn = sim.softmax(dim = -1)
-
-        out = einsum('b i j, b j d -> b i d', attn, v)
-        out = rearrange(out, '(b h) n d -> b n (h d)', h = h)
         return self.drop_path(self.to_out(out))
 
 
@@ -178,11 +185,11 @@ class DiagonalGaussianDistribution(object):
         return self.mean
 
 class PreNormSelfAttention(nn.Module):
-    def __init__(self, dim, heads, dim_head, dropout):
+    def __init__(self, dim, heads, dim_head, dropout, mult=2):
         super().__init__()
 
         self.self_attn = PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, drop_path_rate=dropout))
-        self.ff = PreNorm(dim, FeedForward(dim, drop_path_rate=dropout))
+        self.ff = PreNorm(dim, FeedForward(dim, mult=mult, drop_path_rate=dropout))
 
     def forward(self, x):
         x = self.self_attn(x) + x
