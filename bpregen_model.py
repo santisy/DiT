@@ -70,7 +70,7 @@ class PlainModel(nn.Module):
             self.net = nn.Sequential(*[PreNormSelfAttention(self.embed_dim,
                                                             num_heads,
                                                             self.embed_dim // num_heads,
-                                                            mult=mlp_ratio,
+                                                            mult=int(mlp_ratio),
                                                             dropout=0.1) for _ in range(depth)])
 
         self.p_embed = nn.Sequential(
