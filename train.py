@@ -295,7 +295,7 @@ def main(args):
     logger.info(f"Diffusion model created.")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=8e-5, weight_decay=0)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0)
     if resume_ckpt is not None:
         opt.load_state_dict(resume_ckpt["opt"])
     if not args.no_lr_decay:
@@ -482,6 +482,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt-every", type=int, default=50_000)
     parser.add_argument("--sample-every", type=int, default=10000)
     parser.add_argument("--no-lr-decay", action="store_true")
+    parser.add_argument("--lr", type=float, default=8e-5)
 
     # Newly added argument
     parser.add_argument("--config-file", type=str, required=True)
