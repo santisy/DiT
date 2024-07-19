@@ -217,7 +217,7 @@ def main(args):
     rescale_flag = config.model.get("rescale_flag", False)
     low_a_flag = config.model.get("low_a_flag", False)
     real_noa = config.model.get("real_noa", False)
-    selftt = config.model.get("selftt", True)
+    selftt = config.model.get("selftt", False)
     max_a = config.model.get("max_a", 50)
 
     if level_num == 2:
