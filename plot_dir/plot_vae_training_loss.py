@@ -20,21 +20,30 @@ def parse_log_file(log_file):
                     losses.append(loss)
     return losses
 
-def main(log_files, start_ratio, smooth_factor=10):
+def main(log_files, start_ratio, smooth_factor=10, plot_all=False, draw_line=False):
     plt.figure(figsize=(10, 6))
     colors = ['navy', 'darkgreen', 'darkred', 'black']  # Formal color choices
     ax = plt.gca()
+    min_length = min(map(len, [parse_log_file(f) for f in log_files]))
     for i, log_file in enumerate(log_files):
         losses = parse_log_file(log_file)
-        min_length = min(map(len, [parse_log_file(f) for f in log_files]))
-        losses = losses[:min_length]
+        if plot_all:
+            min_length = len(losses)
+            start_ratio = 0
+        else:
+            losses = losses[:min_length]
         start_at = int(len(losses) * start_ratio)
         losses = losses[start_at:]
         if smooth_factor > 1:
             losses_smoothed = smooth(losses, smooth_factor)
         else:
             losses_smoothed = losses
+
         plt.plot(np.arange(start_at, min_length - smooth_factor + 1) * 100, losses_smoothed, label=f'{log_file.split("/")[-1].split(".")[0]}', color=colors[i % len(colors)], linewidth=3)
+        if draw_line: 
+            min_value = min(losses_smoothed)
+            plt.axhline(y=min_value, linestyle='--', color=colors[i % len(colors)]) 
+
     
     #plt.title('Training Loss Over Time', fontsize=18)
     plt.xlabel('Iterations', fontsize=20)
@@ -55,6 +64,12 @@ if __name__ == '__main__':
     parser.add_argument('log_files', type=str, nargs='+', help='Path to the log files to parse and plot')
     parser.add_argument("-s", "--start_ratio", type=float, default=1.0)
     parser.add_argument("-w", "--smooth_window", type=int, default=10)
+    parser.add_argument("-a", "--plot_all", action="store_true")
+    parser.add_argument("-l", "--draw_line", action="store_true")
     args = parser.parse_args()
-    main(args.log_files, args.start_ratio, args.smooth_window)
+    main(args.log_files,
+         args.start_ratio,
+         args.smooth_window,
+         args.plot_all,
+         args.draw_line)
 
