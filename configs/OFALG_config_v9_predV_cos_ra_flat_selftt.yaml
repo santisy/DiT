@@ -14,7 +14,7 @@ model:
     low_a_flag: true
     real_noa: true
     max_a: 10
-    activation: "geglu"
+    selftt: true
 
 data:
     num_classes: -1
