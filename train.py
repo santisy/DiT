@@ -300,6 +300,10 @@ def main(args):
         opt.load_state_dict(resume_ckpt["opt"])
     if not args.no_lr_decay:
         scheduler = LambdaLR(opt, lr_lambda)
+        if resume_ckpt is not None and resume_ckpt.get("scheduler", None) is not None:
+            scheduler.load_state_dict(resume_ckpt["scheduler"])
+    else:
+        scheduler = None
     if not args.no_mixed_pr:
         scaler = GradScaler()
 
@@ -330,6 +334,8 @@ def main(args):
 
     # Variables for monitoring/logging purposes:
     train_steps = 0
+    if resume_ckpt is not None:
+        train_steps = resume_ckpt.get("train_steps", 0)
     log_steps = 0
     running_loss = 0
     start_time = time()
@@ -454,7 +460,9 @@ def main(args):
                         "model": model.module.state_dict(),
                         "ema": ema.state_dict(),
                         "opt": opt.state_dict(),
-                        "args": args
+                        "args": args,
+                        "scheduler": scheduler.state_dict() if scheduler is not None else None,
+                        "train_steps": train_steps
                     }
                     checkpoint_path = os.path.join(checkpoint_dir, f"{train_steps:07d}_l{level_num}.pt")
                     torch.save(checkpoint, checkpoint_path)
