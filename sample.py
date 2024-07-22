@@ -49,6 +49,10 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     debug_flag = args.debug
+    gt_l0 = args.gt_l0
+    gt_l1 = args.gt_l1
+    if gt_l1:
+        gt_l0 = True
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
 
@@ -180,9 +184,6 @@ def main(args):
         scales = []
         decoded = []
         for l in range(3):
-            if debug_flag and l != 2:
-                continue
-
             # Random generator
             seed = i * 3 + l
             if args.l0_seed is not None and l == 0:
@@ -194,6 +195,32 @@ def main(args):
             length = dataset.octree_root_num if l == 0 else dataset.octree_root_num * 8
             ch = in_ch_list[l]
 
+            # Other divergence than usual
+            # Debug
+            if debug_flag and l != 2:
+                continue
+            # GT l0
+            if gt_l0 and l == 0:
+                x0_raw, _, _, _, _ = dataset[i]
+                x0_raw = x0_raw.unsqueeze(dim=0).to(device).float()
+                x0_gt = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone()
+                xc.append(x0_gt)
+                sample_ = torch.zeros(batch_size,
+                                      length,
+                                      dataset.get_level_vec_len(0) - 4).to(device)
+                sample_[:, :, -7] = x0_gt[:, :, 0]
+                sample_[:, :, -3:] = x0_gt[:, :, -3:]
+                decoded.append(sample_.clone())
+                continue
+            if gt_l1 and l == 1:
+                _, x1_raw, _, _, _ = dataset[i]
+                x1_raw = x1_raw.unsqueeze(dim=0)
+                x1_gt = x1_raw[:, :, m ** 3:].detach().clone().to(device)
+                B, L, C = x1_gt.shape
+                x1_gt = x1_gt.reshape(B, L // sibling_num, -1).contiguous()
+                x2_non_V = x1_gt.detach()
+                xc.append(x1_gt.clone())
+                continue
 
             # Random input
             z = torch.randn(batch_size,
@@ -324,5 +351,9 @@ if __name__ == "__main__":
     parser.add_argument("--clip-denoised", action="store_true")
     parser.add_argument("-d", "--debug", action="store_true",
                         help="The debug flag.")
+    parser.add_argument("--gt-l0", action="store_true",
+                        help="GT l0 inspect.")
+    parser.add_argument("--gt-l1", action="store_true",
+                        help="GT l1 inspect")                        
     args = parser.parse_args()
     main(args)
