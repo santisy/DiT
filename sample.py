@@ -204,7 +204,7 @@ def main(args):
                 x0_raw, _, _, _, _ = dataset[i]
                 x0_raw = x0_raw.unsqueeze(dim=0).to(device).float()
                 x0_gt = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone()
-                xc.append(x0_gt)
+                xc = [x0_gt,]
                 sample_ = torch.zeros(batch_size,
                                       length,
                                       dataset.get_level_vec_len(0) - 4).to(device)
@@ -219,7 +219,8 @@ def main(args):
                 B, L, C = x1_gt.shape
                 x1_gt = x1_gt.reshape(B, L // sibling_num, -1).contiguous()
                 x2_non_V = x1_gt.detach()
-                xc.append(x1_gt.clone())
+                xc = [x1_gt.clone(),]
+                positions = [None,]
                 continue
 
             # Random input
