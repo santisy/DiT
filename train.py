@@ -219,6 +219,7 @@ def main(args):
     real_noa = config.model.get("real_noa", False)
     selftt = config.model.get("selftt", False)
     max_a = config.model.get("max_a", 50)
+    mlp_ratio = config.model.get("mlp_ratio")
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -235,6 +236,10 @@ def main(args):
         plain_model = plain_model_list[level_num]
     else:
         plain_model = plain_model_list
+    if isinstance(mlp_ratio, (list, tuple)):
+        mlp_ratio_ = mlp_ratio[level_num]
+    else:
+        mlp_ratio_ = mlp_ratio
     if plain_model:
         model_class = PlainModel
         learn_sigma = False
@@ -258,7 +263,7 @@ def main(args):
                                                      no_a_flag=noa_flag),
         # Network itself related
         hidden_size=hidden_size, # 4 times rule
-        mlp_ratio=config.model.mlp_ratio,
+        mlp_ratio=mlp_ratio_,
         depth=depth,
         num_heads=num_heads,
         cross_layers=config.model.cross_layers if level_num != 0 else [],

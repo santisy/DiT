@@ -82,6 +82,7 @@ def main(args):
         rescale_flags.append(rescale_flag)
         real_noa = config.model.get("real_noa", False)
         selftt = config.model.get("selftt", False)
+        mlp_ratio = config.model.get("mlp_ratio")
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
@@ -96,6 +97,10 @@ def main(args):
             sibling_num = sibling_total[l]
         else:
             sibling_num = sibling_total
+        if isinstance(mlp_ratio, (list, tuple)):
+            mlp_ratio_ = mlp_ratio[l]
+        else:
+            mlp_ratio_ = mlp_ratio
 
         hidden_size = config.model.hidden_sizes[l]
 
@@ -134,7 +139,7 @@ def main(args):
                                                          no_a_flag=noa_flag),
             # Network itself related
             hidden_size=hidden_size, # 4 times rule
-            mlp_ratio=config.model.mlp_ratio,
+            mlp_ratio=mlp_ratio_,
             depth=depth,
             num_heads=num_heads,
             cross_layers=config.model.cross_layers if l != 0 else [],
