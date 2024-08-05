@@ -2,13 +2,11 @@
 #SBATCH --time=71:00:0
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=5
-#SBATCH --mem=24G
+#SBATCH --cpus-per-task=17
+#SBATCH --mem=48G
 #SBATCH --gres=gpu:a100:1
-#SBATCH --job-name="l1_0804_flat_plain"
+#SBATCH --job-name="l0_0626_plain"
 #SBATCH --output=./sbatch_logs/%j.log
-#SBATCH --mail-user=dya62@sfu.ca
-#SBATCH --mail-type=ALL
 
 # List out some useful information (optional)
 echo "SLURM_JOBID="$SLURM_JOBID
@@ -68,13 +66,16 @@ srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --rdzv_id="$SLURM_JOBID" \
     --rdzv_backend=c10d \
     --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
-    train.py --exp-id l1_0804_flat_plain \
+    train.py --exp-id l0_0626_plain \
     --epoch 4000 \
-    --global-batch-size 128 \
-    --config-file configs/OFALG_config_v9_predV_cos_ra_ac_flat_lessa.yaml \
+    --global-batch-size 1024 \
+    --config-file configs/OFALG_config_v9_predV_cos_ra.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane_discreteL1 \
-    --num-workers 40 \
+    --num-workers 128 \
+    --resume training_runs/l0_0626_plain/0096000_l0.pt \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
+    --gradient-clipping \
     --no-lr-decay \
-    --level-num 1
+    --global-seed 1 \
+    --level-num 0
