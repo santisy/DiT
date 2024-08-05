@@ -71,6 +71,8 @@ srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --global-batch-size 128 \
     --config-file configs/OFALG_config_v9_predV_cos_ra.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane_discreteL1 \
+    --resume training_runs/l1_0626_plain/0288000_l1.pt \
+    --no-lr-decay \
     --num-workers 32 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \

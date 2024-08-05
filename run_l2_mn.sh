@@ -3,9 +3,9 @@
 #SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=9
-#SBATCH --mem=32G
+#SBATCH --mem=24G
 #SBATCH --gres=gpu:a100:1
-#SBATCH --job-name="l2_0626_DiT"
+#SBATCH --job-name="l2_0712_DiT"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # List out some useful information (optional)
@@ -66,10 +66,10 @@ srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --rdzv_id="$SLURM_JOBID" \
     --rdzv_backend=c10d \
     --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
-    train.py --exp-id l2_0626_DiT \
+    train.py --exp-id l2_0712_DiT \
     --epoch 4000 \
-    --global-batch-size 144 \
-    --config-file configs/OFALG_config_v9_predV_cos_ra.yaml \
+    --global-batch-size 192 \
+    --config-file configs/OFALG_config_v9_predV_cos_ra_unflat.yaml \
     --data-root ${SLURM_TMPDIR}/shapenet_airplane_discreteL1 \
     --num-workers 48 \
     --ckpt-every 8000 \

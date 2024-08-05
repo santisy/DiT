@@ -3,8 +3,8 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=25
 #SBATCH --mem=32G
-#SBATCH --gres=gpu:v100l:1
-#SBATCH --job-name="l1_0504"
+#SBATCH --gres=gpu:a100:2
+#SBATCH --job-name="l1_chairs_0514"
 #SBATCH --output=./sbatch_logs/%j.log
 
 # list out some useful information (optional)
@@ -27,7 +27,7 @@ echo "NPROCS=$NPROCS"
 
 # Copy data to local
 WORK_DIR=$(pwd)
-DATA_ZIP_PATH=/home/dya62/scratch/datasets/shapenet_airplane_l.zip
+DATA_ZIP_PATH=./datasets/shapenet_chairs_l_corrected.zip
 DATA_ZIP_FILE=$(basename ${DATA_ZIP_PATH})
 cp $DATA_ZIP_PATH $SLURM_TMPDIR
 cd $SLURM_TMPDIR && unzip $DATA_ZIP_FILE && rm $DATA_ZIP_FILE
@@ -40,14 +40,12 @@ torchrun \
     --nproc_per_node=$NPROCS \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-train.py --exp-id l1_0504 \
+train.py --exp-id l1_chairs_0514 \
     --epoch 4000 \
-    --global-batch-size 96 \
-    --config-file configs/OFALG_config_v5_nl.yaml \
-    --data-root ${SLURM_TMPDIR}/shapenet_airplane_l \
+    --global-batch-size 50 \
+    --config-file configs/OFALG_config_v7_nl_small.yaml \
+    --data-root ${SLURM_TMPDIR}/shapenet_chairs_l_corrected \
     --num-workers 24 \
     --ckpt-every 8000 \
-    --vae-std datasets/vae_stds/vae_0040000-shapenet_airplane_l-stds.npz \
-    --vae-ckpt training_runs/vae_0503/vae_0040000.pt \
     --work-on-tmp-dir \
     --level-num 1

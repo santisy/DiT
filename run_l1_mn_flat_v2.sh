@@ -5,10 +5,8 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=24G
 #SBATCH --gres=gpu:a100:1
-#SBATCH --job-name="l1_0804_flat_plain"
+#SBATCH --job-name="l1_0722_flat_ac_plain"
 #SBATCH --output=./sbatch_logs/%j.log
-#SBATCH --mail-user=dya62@sfu.ca
-#SBATCH --mail-type=ALL
 
 # List out some useful information (optional)
 echo "SLURM_JOBID="$SLURM_JOBID
@@ -68,7 +66,7 @@ srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --rdzv_id="$SLURM_JOBID" \
     --rdzv_backend=c10d \
     --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
-    train.py --exp-id l1_0804_flat_plain \
+    train.py --exp-id l1_0722_flat_ac_plain \
     --epoch 4000 \
     --global-batch-size 128 \
     --config-file configs/OFALG_config_v9_predV_cos_ra_ac_flat_lessa.yaml \
@@ -76,5 +74,5 @@ srun --ntasks=$WORLD_SIZE --ntasks-per-node=$SLURM_NTASKS_PER_NODE torchrun \
     --num-workers 40 \
     --ckpt-every 8000 \
     --work-on-tmp-dir \
-    --no-lr-decay \
+    --gradient-clipping \
     --level-num 1

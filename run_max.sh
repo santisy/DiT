@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --time=24:00:0
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=48G
+#SBATCH --job-name="get_max"
+#SBATCH --output=./sbatch_logs/%j.log
+
+# list out some useful information (optional)
+echo "SLURM_JOBID="$SLURM_JOBID
+echo "SLURM_JOB_NODELIST"=$SLURM_JOB_NODELIST
+echo "SLURM_NNODES"=$SLURM_NNODES
+echo "SLURMTMPDIR="$SLURM_TMPDIR
+echo "working directory = "$SLURM_SUBMIT_DIR
+# sample process (list hostnames of the nodes you've requested)
+NPROCS=`srun --nodes=${SLURM_NNODES} bash -c 'hostname' | wc -l`
+echo NPROCS=$NPROCS
+
+# Source the environment, load everything here
+unset LD_LIBRARY_PATH
+source ~/.bashrc
+module load python/3.9.6
+source ~/DiT/bin/activate
+
+python max_script.py
+
