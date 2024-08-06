@@ -10,6 +10,7 @@ Sample new images from a pre-trained DiT.
 import os
 import math
 import torch
+import torch.nn as nn
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 from diffusion import create_diffusion
@@ -27,6 +28,9 @@ from transport import create_transport, Sampler
 
 from train import noise_conditioning
 
+def count_parameters_in_millions(model: nn.Module) -> float:
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total_params / 1_000_000  # Convert to millions
 
 def main(args):
     # Make directories
@@ -152,6 +156,8 @@ def main(args):
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
         model.load_state_dict(model_ckpt["ema"])
+        param_count = count_parameters_in_millions(model)
+        print(f"\033[92mParameter count at level {l}: {param_count}M.\033[00m")
         model.to(device)
         model.eval()  # important!
         model_list.append(model)
