@@ -242,7 +242,6 @@ def main(args):
         mlp_ratio_ = mlp_ratio
     if plain_model:
         model_class = PlainModel
-        learn_sigma = False
     else:
         model_class = DiT
 

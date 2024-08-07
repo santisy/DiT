@@ -124,7 +124,6 @@ def main(args):
             plain_model = plain_model_list
         if plain_model:
             model_class = PlainModel
-            learn_sigma = False
         else:
             model_class = DiT
 
