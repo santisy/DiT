@@ -45,6 +45,7 @@ class PlainModel(nn.Module):
                  rescale_flag=False,
                  real_noa=False,
                  selftt=False,
+                 learn_sigma=False,
                  **kwargs
                  ):
 
@@ -87,11 +88,12 @@ class PlainModel(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
         )
 
+        out_ch = self.in_ch if not learn_sigma else self.in_ch * 2
         self.fc_out = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.SiLU(),
-            nn.Linear(self.embed_dim, self.in_ch),
+            nn.Linear(self.embed_dim, int(out_ch) * 2),
         )
 
         if len(condition_node_dim) > 0:
@@ -156,7 +158,8 @@ class PlainModel(nn.Module):
         tokens = x_embeds + time_embeds + other_embed_accumulate + PE
         output = self.net(tokens)
         pred = self.fc_out(output)
-        pred = pred.reshape(B, L, C)
+        pred = pred.reshape(B, L, self.sibling_num, -1)
+        pred = pred.reshape(B, L * self.sibling_num, -1)
 
         return pred
 

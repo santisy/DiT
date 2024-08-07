@@ -29,7 +29,7 @@ def main(log_files, start_ratio, smooth_factor=10, plot_all=False, draw_line=Fal
         losses = parse_log_file(log_file)
         if plot_all:
             min_length = len(losses)
-            start_ratio = 0
+            #start_ratio = 0
         else:
             losses = losses[:min_length]
         start_at = int(len(losses) * start_ratio)
