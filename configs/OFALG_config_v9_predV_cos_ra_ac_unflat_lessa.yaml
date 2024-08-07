@@ -22,7 +22,7 @@ data:
 
 diffusion:
     noise_schedule: "squaredcos_cap_v2"
-    learn_sigma: false
+    learn_sigma: true
     diffusion_steps: 1000
     predict_v: true
     zero_terminal: true
