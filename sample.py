@@ -90,7 +90,7 @@ def main(args):
         depth_total = config.model.depth
         learn_sigma = config.diffusion.get("learn_sigma", True)
         num_heads = config.model.num_heads
-        reg_flag = (config.model.get("reg_flag") and l == 2)
+        reg_flag = (config.model.get("reg_flag", False) and l == 2)
 
         if isinstance(depth_total, (list, tuple)):
             depth = depth_total[l]
@@ -173,7 +173,10 @@ def main(args):
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-        model.load_state_dict(model_ckpt["ema"])
+        if not args.use_latest:
+            model.load_state_dict(model_ckpt["ema"])
+        else:
+            model.load_state_dict(model_ckpt["model"])
         param_count = count_parameters_in_millions(model)
         print(f"\033[92mParameter count at level {l}: {param_count}M.\033[00m")
         model.to(device)
@@ -386,5 +389,6 @@ if __name__ == "__main__":
                         help="GT l0 inspect.")
     parser.add_argument("--gt-l1", action="store_true",
                         help="GT l1 inspect")                        
+    parser.add_argument("--use-latest", action="store_true") 
     args = parser.parse_args()
     main(args)

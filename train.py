@@ -220,7 +220,7 @@ def main(args):
     selftt = config.model.get("selftt", False)
     max_a = config.model.get("max_a", 50)
     mlp_ratio = config.model.get("mlp_ratio")
-    reg_flag = (config.model.get("reg_flag") and level_num == 2)
+    reg_flag = (config.model.get("reg_flag", False) and level_num == 2)
 
     if level_num == 2:
         in_ch = int(m ** 3)
