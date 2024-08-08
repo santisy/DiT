@@ -69,6 +69,8 @@ def main(args):
     noa_flags = []
     rescale_flags = []
     m_ = None
+    reg_flag = False
+
     for l in range(3):
         config = config_list[l]
 
@@ -88,6 +90,7 @@ def main(args):
         depth_total = config.model.depth
         learn_sigma = config.diffusion.get("learn_sigma", True)
         num_heads = config.model.num_heads
+        reg_flag = (config.model.get("reg_flag") and l == 2)
 
         if isinstance(depth_total, (list, tuple)):
             depth = depth_total[l]
@@ -127,6 +130,15 @@ def main(args):
         else:
             model_class = DiT
 
+        # If reg change the previous arguments
+        if reg_flag:
+            out_ch = in_ch
+            in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
+            learn_sigma = False
+        else:
+            out_ch = None
+
+
         # Create DiT model
         model = model_class(
             # Data related
@@ -153,6 +165,8 @@ def main(args):
             no_a_embed=noa_flag,
             rescale_flag=rescale_flag,
             real_noa=real_noa,
+            out_ch=out_ch,
+            reg_flag=reg_flag,
             selftt=selftt
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
@@ -167,7 +181,9 @@ def main(args):
         model_list.append(model)
 
         # Create samplers
-        if fm_flag:
+        if reg_flag:
+            sampler = None
+        elif fm_flag:
             transport = create_transport("Linear",
                                          "velocity",
                                          "velocity",
@@ -265,7 +281,11 @@ def main(args):
 
             # Sample
             with autocast():
-                if fm_flags[l]:
+                if reg_flag and l == 2:
+                    model_kwargs = dict(a=[], y=[], x0=[], positions=[])
+                    pre_x1 = xc[-1].reshape(batch_size, 2048, -1)
+                    samples = model(pre_x1, None, **model_kwargs)
+                elif fm_flags[l]:
                     sampler: Sampler = sampler_list[l]
                     sample_fn = sampler.sample_ode(
                                 sampling_method="euler",

@@ -400,6 +400,7 @@ class DiT(nn.Module):
         sibling_num=8,
         learned_pos_embedding=False,
         real_noa=False,
+        out_ch=None,
         **kwargs
     ):
         super().__init__()
@@ -409,6 +410,8 @@ class DiT(nn.Module):
         self.learn_sigma = learn_sigma
         self.in_channels = in_channels
         self.out_channels = in_channels * 2 if learn_sigma else in_channels
+        if out_ch is not None:
+            self.out_channels = out_ch
         self.num_heads = num_heads
         self.condition_node_num = condition_node_num
         self.add_inject = add_inject

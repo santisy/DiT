@@ -46,6 +46,8 @@ class PlainModel(nn.Module):
                  real_noa=False,
                  selftt=False,
                  learn_sigma=False,
+                 out_ch=None,
+                 reg_flag=False,
                  **kwargs
                  ):
 
@@ -58,6 +60,7 @@ class PlainModel(nn.Module):
         self.flow_flag = flow_flag
         self.rescale_flag = rescale_flag
         self.real_noa = real_noa
+        self.reg_flag = reg_flag
 
         if not selftt:
             layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
@@ -81,14 +84,19 @@ class PlainModel(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
         ) 
 
-        self.time_embed = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LayerNorm(self.embed_dim),
-            nn.SiLU(),
-            nn.Linear(self.embed_dim, self.embed_dim),
-        )
+        if not reg_flag:
+            self.time_embed = nn.Sequential(
+                nn.Linear(self.embed_dim, self.embed_dim),
+                nn.LayerNorm(self.embed_dim),
+                nn.SiLU(),
+                nn.Linear(self.embed_dim, self.embed_dim),
+            )
 
-        out_ch = self.in_ch if not learn_sigma else self.in_ch * 2
+        out_ch = self.in_ch if out_ch is None else out_ch
+        out_ch = out_ch if not learn_sigma else out_ch * 2
+        if reg_flag:
+            out_ch = out_ch * sibling_num
+
         self.fc_out = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
@@ -96,7 +104,7 @@ class PlainModel(nn.Module):
             nn.Linear(self.embed_dim, int(out_ch)),
         )
 
-        if len(condition_node_dim) > 0:
+        if len(condition_node_dim) > 0 and not reg_flag:
             self.a_embed_list = nn.ModuleList()
             self.c_embed_list = nn.ModuleList()
             for c_nd in condition_node_dim:
@@ -129,7 +137,7 @@ class PlainModel(nn.Module):
             L_x = L
 
         other_embed_accumulate = 0
-        if len(self.condition_node_dim) > 0:
+        if len(self.condition_node_dim) > 0 and not self.reg_flag:
             # Noise augmentation level `a`, and previous condition embedding `c`
             for a_, xc_, a_embed, c_embed in zip(
                 a, x0, self.a_embed_list, self.c_embed_list):
@@ -149,10 +157,12 @@ class PlainModel(nn.Module):
             PE = 0
 
         """ forward pass """
-        bsz = timesteps.size(0)
         if self.flow_flag:
             timesteps = (timesteps * 1000).floor().to(torch.int64)
-        time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
+        if not self.reg_flag:
+            time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
+        else:
+            time_embeds = 0
         x_embeds = self.p_embed(x)
     
         tokens = x_embeds + time_embeds + other_embed_accumulate + PE

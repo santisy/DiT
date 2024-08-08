@@ -11,7 +11,7 @@ import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-import torch.nn as nn
+import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -220,6 +220,7 @@ def main(args):
     selftt = config.model.get("selftt", False)
     max_a = config.model.get("max_a", 50)
     mlp_ratio = config.model.get("mlp_ratio")
+    reg_flag = (config.model.get("reg_flag") and level_num == 2)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -251,6 +252,14 @@ def main(args):
     else:
         max_a = max_a
 
+    # If reg change the previous arguments
+    if reg_flag:
+        out_ch = in_ch
+        in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
+        learn_sigma = False
+    else:
+        out_ch = None
+
     # Create DiT model
     model = model_class(
         # Data related
@@ -277,10 +286,15 @@ def main(args):
         no_a_embed=noa_flag,
         rescale_flag=rescale_flag,
         real_noa=real_noa,
+        out_ch=out_ch,
+        reg_flag=reg_flag,
         selftt=selftt
     ).to(device)
 
-    if fm_flag:
+    # Create diffusion related loss module or not?
+    if reg_flag:
+        pass
+    elif fm_flag:
         transport = create_transport("Linear", "velocity", None, None, None,
                                      snr_type="lognorm")
     elif edm_flag:
@@ -289,6 +303,7 @@ def main(args):
         edm_loss = EDMLoss()
     else:
         diffusion = create_diffusion(timestep_respacing="", **config.diffusion)
+
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model)  # Create an EMA of the model for use after training
     if resume_ckpt is not None:
@@ -380,7 +395,8 @@ def main(args):
             elif level_num == 2:
                 x = x2
                 B, L, C = x1.shape
-                x1 = x1.reshape(B, L // sibling_num, -1)
+                if not reg_flag:
+                    x1 = x1.reshape(B, L // sibling_num, -1)
                 if not noa_flag:
                     xc = [x0, x1]
                     a = [torch.randint(0, max_a, (x.shape[0],), device=device),
@@ -393,8 +409,12 @@ def main(args):
 
             # Noise augmentation
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
-
-            if fm_flag:
+            if reg_flag:
+                model_kwargs = dict(a=[], y=[], x0=[], positions=[])
+                with autocast(enabled=not args.no_mixed_pr):
+                    out = model(x1, None, **model_kwargs)
+                loss = F.l1_loss(out, x2)
+            elif fm_flag:
                 xc = noise_conditioning(xc, a, transport, fm_flag=True)
                 with autocast(enabled=not args.no_mixed_pr):
                     loss_dict = transport.training_losses(model, x, model_kwargs)
