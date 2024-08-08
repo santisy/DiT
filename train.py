@@ -292,11 +292,8 @@ def main(args):
     ).to(device)
 
     # Create diffusion related loss module or not?
-    if reg_flag:
-        pass
-    elif fm_flag:
-        transport = create_transport("Linear", "velocity", None, None, None,
-                                     snr_type="lognorm")
+    if fm_flag:
+        transport = create_transport("Linear", "velocity", None, None, None, snr_type="lognorm")
     elif edm_flag:
         print("\033[92mUse EDM.\033[00m")
         model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)
@@ -411,6 +408,7 @@ def main(args):
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             if reg_flag:
                 model_kwargs = dict(a=[], y=[], x0=[], positions=[])
+                x1 = noise_conditioning([x1,], a, diffusion)[0]
                 with autocast(enabled=not args.no_mixed_pr):
                     out = model(x1, None, **model_kwargs)
                 loss = F.l1_loss(out, x2)
