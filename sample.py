@@ -16,6 +16,7 @@ torch.backends.cudnn.allow_tf32 = True
 from diffusion import create_diffusion
 from diffusion.respace import SpacedDiffusion
 from ruamel.yaml import YAML
+import random
 from easydict import EasyDict as edict
 from models import DiT
 
@@ -26,7 +27,6 @@ from data_extensions import load_utils
 from torch.cuda.amp import autocast
 from transport import create_transport, Sampler
 
-from train import noise_conditioning
 
 def count_parameters_in_millions(model: nn.Module) -> float:
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -212,6 +212,8 @@ def main(args):
         positions = []
         scales = []
         decoded = []
+        random.seed(i)
+        gt_id = int(len(dataset) * random.random())
         for l in range(3):
             # Random generator
             seed = i * 3 + l
@@ -230,7 +232,7 @@ def main(args):
                 continue
             # GT l0
             if gt_l0 and l == 0:
-                x0_raw, _, _, _, _ = dataset[i]
+                x0_raw, _, _, _, _ = dataset[gt_id]
                 x0_raw = x0_raw.unsqueeze(dim=0).to(device).float()
                 x0_gt = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone()
                 xc = [x0_gt,]
@@ -242,7 +244,7 @@ def main(args):
                 decoded.append(sample_.clone())
                 continue
             if gt_l1 and l == 1:
-                _, x1_raw, _, _, _ = dataset[i]
+                _, x1_raw, _, _, _ = dataset[gt_id]
                 x1_raw = x1_raw.unsqueeze(dim=0)
                 x1_gt = x1_raw[:, :, m ** 3:].detach().clone().to(device)
                 B, L, C = x1_gt.shape
