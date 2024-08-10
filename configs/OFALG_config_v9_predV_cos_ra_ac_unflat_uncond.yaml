@@ -5,11 +5,11 @@ model:
     num_heads: 16
     add_inject: true
     pos_emedding_version: "v2"
-    hidden_sizes: [1024, 1024, 1024]
+    hidden_sizes: [1024, 1280, 1024]
     align_gen: [false, true, true]
-    sibling_num: [1, 2, 2]
+    sibling_num: [1, 4, 2]
     use_EDM: false
-    plain_model: [true, true, false]
+    plain_model: [true, true, true]
     noa_flag: true
     low_a_flag: true
     real_noa: false

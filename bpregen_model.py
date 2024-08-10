@@ -48,6 +48,7 @@ class PlainModel(nn.Module):
                  learn_sigma=False,
                  out_ch=None,
                  reg_flag=False,
+                 uncond_flag=False,
                  **kwargs
                  ):
 
@@ -104,7 +105,7 @@ class PlainModel(nn.Module):
             nn.Linear(self.embed_dim, int(out_ch)),
         )
 
-        if len(condition_node_dim) > 0 and not reg_flag:
+        if len(condition_node_dim) > 0 and not reg_flag and not uncond_flag:
             self.a_embed_list = nn.ModuleList()
             self.c_embed_list = nn.ModuleList()
             for c_nd in condition_node_dim:

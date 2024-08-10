@@ -70,6 +70,7 @@ def main(args):
     rescale_flags = []
     m_ = None
     reg_flag = False
+    uncond_flag = False
 
     for l in range(3):
         config = config_list[l]
@@ -91,6 +92,7 @@ def main(args):
         learn_sigma = config.diffusion.get("learn_sigma", True)
         num_heads = config.model.num_heads
         reg_flag = (config.model.get("reg_flag", False) and l == 2)
+        uncond_flag = (config.model.get("uncond_flag", False) and l == 1)
 
         if isinstance(depth_total, (list, tuple)):
             depth = depth_total[l]
@@ -167,6 +169,7 @@ def main(args):
             real_noa=real_noa,
             out_ch=out_ch,
             reg_flag=reg_flag,
+            uncond_flag=uncond_flag,
             selftt=selftt
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
@@ -204,6 +207,8 @@ def main(args):
 
     batch_size = args.sample_batch_size
     sample_num = args.sample_num
+    if uncond_flag:
+        gt_l0 = True
     if args.sample_all:
         sample_num = dataset.get_sample_num()
         print(f"\033[92mSample all five percent objects {sample_num}.\033[00m")
