@@ -62,6 +62,7 @@ class PlainModel(nn.Module):
         self.rescale_flag = rescale_flag
         self.real_noa = real_noa
         self.reg_flag = reg_flag
+        self.uncond_flag = uncond_flag
 
         if not selftt:
             layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
@@ -138,7 +139,7 @@ class PlainModel(nn.Module):
             L_x = L
 
         other_embed_accumulate = 0
-        if len(self.condition_node_dim) > 0 and not self.reg_flag:
+        if len(self.condition_node_dim) > 0 and not self.reg_flag and not self.uncond_flag:
             # Noise augmentation level `a`, and previous condition embedding `c`
             for a_, xc_, a_embed, c_embed in zip(
                 a, x0, self.a_embed_list, self.c_embed_list):
