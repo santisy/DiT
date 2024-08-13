@@ -21,6 +21,7 @@ from plot_dir.plot_tool import plot_root_aabb
 #sampler = create_diffusion(timestep_respacing="", **config.diffusion)
 
 dataset = OFLAGDataset("/media/dya62/Data2/datasets/shapenetManifold/shapenet_airplane_discreteL1.zip", octree_root_num=256)
+print(f"class num {dataset.class_num}")
 
 #x0, x1, _, _, label = dataset[200]
 #print(x0.shape)

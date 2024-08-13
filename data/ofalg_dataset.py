@@ -20,6 +20,8 @@ class OFLAGDataset(Dataset):
                  **kwargs):
         super().__init__()
 
+        assert data_root.endswith(".zip")
+
         self._octree_root_num = octree_root_num
         self._unit_length0 = unit_length_list[0]
         self._unit_length1 = unit_length_list[1]
@@ -75,6 +77,10 @@ class OFLAGDataset(Dataset):
 
     def __len__(self):
         return len(self.file_paths)
+
+    @property
+    def class_num(self):
+        return len(self.label_dict)
 
     def get_ref_objects(self):
         pass

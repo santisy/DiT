@@ -290,6 +290,7 @@ def main(args):
         out_ch=out_ch,
         reg_flag=reg_flag,
         uncond_flag=uncond_flag,
+        class_num=dataset.class_num,
         selftt=selftt
     ).to(device)
 

@@ -48,6 +48,7 @@ class PlainModel(nn.Module):
                  learn_sigma=False,
                  out_ch=None,
                  reg_flag=False,
+                 class_num=None,
                  uncond_flag=False,
                  **kwargs
                  ):
@@ -63,6 +64,21 @@ class PlainModel(nn.Module):
         self.real_noa = real_noa
         self.reg_flag = reg_flag
         self.uncond_flag = uncond_flag
+
+        # Class conditional related
+        if class_num is not None:
+            y_embed_dim = 256
+            self.class_cond_flag = True
+            self.class_embedding = nn.Embedding(class_num, y_embed_dim)
+            self.y_embed = nn.Sequential(
+                nn.Linear(y_embed_dim, self.embed_dim),
+                nn.LayerNorm(self.embed_dim),
+                nn.SiLU(),
+                nn.Linear(self.embed_dim, self.embed_dim),
+            ) 
+        else:
+            self.class_cond_flag = False
+
 
         if not selftt:
             layer = nn.TransformerEncoderLayer(d_model=self.embed_dim,
@@ -158,6 +174,10 @@ class PlainModel(nn.Module):
         else:
             PE = 0
 
+        if self.class_cond_flag:
+            y_embeds = self.class_embedding(y)
+            y_embeds = self.y_embed(y_embeds).unsqueeze(dim=1)
+
         """ forward pass """
         if self.flow_flag:
             timesteps = (timesteps * 1000).floor().to(torch.int64)
@@ -166,8 +186,9 @@ class PlainModel(nn.Module):
         else:
             time_embeds = 0
         x_embeds = self.p_embed(x)
+
     
-        tokens = x_embeds + time_embeds + other_embed_accumulate + PE
+        tokens = x_embeds + time_embeds + other_embed_accumulate + PE + y_embeds
         output = self.net(tokens)
         pred = self.fc_out(output)
         pred = pred.reshape(B, L // self.sibling_num, self.sibling_num, -1)
@@ -183,11 +204,19 @@ if __name__ == "__main__":
                     hidden_size=512,
                     no_a_embed=True,
                     real_noa=True,
+                    class_num=1,
                     selftt=True).cuda()
 
     t = torch.randint(0, 1024, (4,)).cuda()
     x = torch.randn(4, 256, 4).cuda()
+    y = torch.tensor([0,] * 4).long().cuda()
 
     with autocast(enabled=True):
-        out = net(x, t)
+        out = net(x, t, y=y)
+    out.sum().backward()
     print(out.shape)
+    
+    # Check for parameters that did not collect gradients
+    for name, param in net.named_parameters():
+        if param.requires_grad and param.grad is None:
+            print(f"Parameter '{name}' did not collect a gradient.")
