@@ -7,6 +7,7 @@ import random
 import torch
 from utils.chamfer_dist import chamfer_3DDist
 import trimesh
+from tqdm import tqdm
 from pysdf import SDF
 import numpy as np
 
@@ -34,7 +35,8 @@ def measure_metrics(args):
     gen_name = os.path.basename(args.gen_dir)
 
     # Prepare to write to text file
-    f = open(f"./metric_out/{gen_name}_metric_out.txt", "w")
+    os.makedirs("metric_out", exist_ok=True)
+    f_ = open(f"./metric_out/{gen_name}_metric_out.txt", "w")
 
     gen_mesh_list = sorted(glob.glob(os.path.join(args.gen_dir, "*.obj")))
     gen_points = []
@@ -47,13 +49,13 @@ def measure_metrics(args):
     chamfer_dist = chamfer_3DDist()
 
     # Sample points on generated meshes
-    for obj_path in gen_mesh_list:
+    for obj_path in tqdm(gen_mesh_list, desc="Sample points on generated meshes"):
         mesh = trimesh.load(obj_path)
         mesh = normalize_mesh(mesh)
         f = SDF(mesh.vertices, mesh.faces)
         # This is the numpy array of points of shape (5000, 3)
         gen_points.append(f.sample_surface(5000))
-    for obj_path in ref_mesh_list:
+    for obj_path in tqdm(ref_mesh_list, desc="Sample points on reference meshes"):
         mesh = trimesh.load(obj_path)
         mesh = normalize_mesh(mesh)
         f = SDF(mesh.vertices, mesh.faces)
@@ -73,7 +75,7 @@ def measure_metrics(args):
     cov_set = set()
     nna_indicator = 0
 
-    for i in range(gen_n):
+    for i in tqdm(range(gen_n), desc="Calculating metrics on generated meshes"):
         gen_points_now = gen_points_tensor[i].unsqueeze(dim=0).repeat((total_points.shape[0] - 1, 1, 1))
         rest_points = torch.cat([total_points[:i], total_points[i+1:]], dim=0).contiguous()
         dist1, dist2, _, _ = chamfer_dist(gen_points_now, rest_points)
@@ -88,7 +90,7 @@ def measure_metrics(args):
         if total_min < gen_n - 1:
             nna_indicator += 1
 
-    for i in range(ref_n):
+    for i in tqdm(range(ref_n), desc="Calculating metrics on reference meshes"):
         ref_points_now = ref_points_tensor[i].unsqueeze(dim=0).repeat((total_points.shape[0] - 1, 1, 1))
         rest_points = torch.cat([total_points[:gen_n + i], total_points[gen_n + i+1:]], dim=0).contiguous()
         dist1, dist2, _, _ = chamfer_dist(ref_points_now, rest_points)
@@ -100,16 +102,16 @@ def measure_metrics(args):
             nna_indicator += 1
 
     # Write the results
-    f.write("CD results:\n")
+    f_.write("CD results:\n")
     cov_cd = len(cov_set) / float(ref_n) * 100
-    f.write(f"COV: {cov_cd:.2f}")
-    mmd_cd = min_dist / float(ref_n) / 1000.
-    f.write(f"MMD: {mmd_cd:.2f}")
-    nna_1 = total_min / float(gen_n + ref_n) * 100
-    f.write(f"1-NNA: {nna_1:.2f}") 
+    f_.write(f"COV: {cov_cd:.2f}%\t")
+    mmd_cd = min_dist / float(ref_n)
+    f_.write(f"MMD: {mmd_cd:.2f}\t")
+    nna_1 = nna_indicator / (float(gen_n + ref_n)) * 100
+    f_.write(f"1-NNA: {nna_1:.2f}%\t") 
 
     # Finalize
-    f.close()
+    f_.close()
 
 
 if __name__ == "__main__":

@@ -176,10 +176,10 @@ def main(args):
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-        if not args.use_latest:
-            model.load_state_dict(model_ckpt["ema"])
-        else:
+        if args.use_latest or reg_flag:
             model.load_state_dict(model_ckpt["model"])
+        else:
+            model.load_state_dict(model_ckpt["ema"])
         param_count = count_parameters_in_millions(model)
         print(f"\033[92mParameter count at level {l}: {param_count}M.\033[00m")
         model.to(device)

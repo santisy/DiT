@@ -377,7 +377,7 @@ def main(args):
                 x1 = (x1 * 2.0 - 1.0).detach()
                 x2 = (x2 * 2.0 - 1.0).detach()
 
-            y = y.to(device)
+            y = y.long().to(device)
 
             # According to the level_num set the training target x and the conditions
             if level_num == 0:

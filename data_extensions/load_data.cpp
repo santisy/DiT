@@ -10,6 +10,8 @@
 #include <fstream>
 #include <string>
 #include <cmath>
+#include <sstream>
+#include <pybind11/pybind11.h>
 
 #include <torch/extension.h>
 
@@ -142,7 +144,7 @@ float getMaximumVoxelLength(std::string dataRoot, const int level0UnitLength = 3
     return maxVL;
 }
 
-void loadFromFile(std::ifstream& file,
+void loadFromFile(std::istringstream& file,
                   at::Tensor &out,
                   const int length,
                   const int unitLength,
@@ -183,7 +185,7 @@ void loadFromFile(std::ifstream& file,
     }
 }
 
-void loadFromFileAndAssignPos(std::ifstream& file,
+void loadFromFileAndAssignPos(std::istringstream& file,
                               at::Tensor &preScales,
                               at::Tensor &outScales,
                               at::Tensor &out,
@@ -244,10 +246,11 @@ void loadFromFileAndAssignPos(std::ifstream& file,
     }
 }
 
-std::vector<at::Tensor> readAndConstruct(std::string inputPath,
+std::vector<at::Tensor> readAndConstruct(pybind11::bytes input_data,
                                          const int level0UnitLength = 361,
                                          const int level1UnitLength = 139){
-    std::ifstream file(inputPath, std::ios::in | std::ios::binary);
+    std::string data_str = input_data;
+    std::istringstream file(data_str, std::ios::in | std::ios::binary);
 
     float octreeRootNumFloat;
     file.read(reinterpret_cast<char*>(&octreeRootNumFloat), sizeof(float));
@@ -273,8 +276,6 @@ std::vector<at::Tensor> readAndConstruct(std::string inputPath,
     at::Tensor level0Positions = level0Tensor.index({at::indexing::Slice(), at::indexing::Slice(-3, at::indexing::None)}).clone();
     at::Tensor level0Scales = level0Tensor.index({at::indexing::Slice(), -7}).clone();
     loadFromFileAndAssignPos(file, level0Scales, level1Scales, level1Tensor, level0Positions, level1Positions, length1, level1UnitLength);
-
-    file.close();
 
     return {level0Tensor, level1Tensor, level0Positions, level1Positions};
 }
