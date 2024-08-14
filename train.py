@@ -222,6 +222,7 @@ def main(args):
     mlp_ratio = config.model.get("mlp_ratio")
     reg_flag = (config.model.get("reg_flag", False) and level_num == 2)
     uncond_flag = (config.model.get("uncond_flag", False) and level_num == 1)
+    cross_attn = config.model.get("cross_attn", False)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -290,6 +291,7 @@ def main(args):
         out_ch=out_ch,
         reg_flag=reg_flag,
         uncond_flag=uncond_flag,
+        cross_attn=cross_attn,
         selftt=selftt
     ).to(device)
 

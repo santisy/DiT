@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformer_module import PreNormSelfAttention
 from transformer_module import GEGLU
 
@@ -27,6 +28,19 @@ def sincos_embedding(input, dim, max_period=10000):
         embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
     return embedding
 
+class MiniCrossAttention(nn.Module):
+    def __init__(self, d_model, nhead, batch_first=True, dropout=0.1):
+        super().__init__()
+        self.cross_attn = nn.MultiheadAttention(d_model, nhead,
+                                                dropout=dropout,
+                                                batch_first=batch_first)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, src, cond):
+        src2 = self.cross_attn(src, cond, cond)[0]
+        src = src + self.dropout(src2)
+        return src
+
 class PlainModel(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
@@ -50,6 +64,7 @@ class PlainModel(nn.Module):
                  reg_flag=False,
                  num_classes=None,
                  uncond_flag=False,
+                 cross_attn=False,
                  **kwargs
                  ):
 
@@ -64,6 +79,7 @@ class PlainModel(nn.Module):
         self.real_noa = real_noa
         self.reg_flag = reg_flag
         self.uncond_flag = uncond_flag
+        self.cross_attn = cross_attn
 
         # Class conditional related
         if num_classes is not None:
@@ -89,6 +105,13 @@ class PlainModel(nn.Module):
                                                dropout=0.1,
                                                batch_first=True)
             self.net = nn.TransformerEncoder(layer, depth, nn.LayerNorm(self.embed_dim))
+            if cross_attn:
+                self.cross_attn_layers = nn.ModuleList()
+                for _ in range(depth // 4):
+                    self.cross_attn_layers.append(MiniCrossAttention(self.embed_dim,
+                                                                     nhead=num_heads,
+                                                                     batch_first=True,
+                                                                     dropout=0.1))
         else:
             self.net = nn.Sequential(*[PreNormSelfAttention(self.embed_dim,
                                                             num_heads,
@@ -175,22 +198,36 @@ class PlainModel(nn.Module):
         else:
             PE = 0
 
+        # y (class lebel embed)
         if self.class_cond_flag:
             y_embeds = self.class_embedding(y)
             y_embeds = self.y_embed(y_embeds).unsqueeze(dim=1)
 
-        """ forward pass """
+        # t (timestep) embed
         if self.flow_flag:
             timesteps = (timesteps * 1000).floor().to(torch.int64)
         if not self.reg_flag:
             time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
         else:
             time_embeds = 0
-        x_embeds = self.p_embed(x)
 
-    
-        tokens = x_embeds + time_embeds + other_embed_accumulate + PE + y_embeds
-        output = self.net(tokens)
+        # x (input) embed
+        x_embeds = self.p_embed(x)
+        tokens = x_embeds + other_embed_accumulate + PE
+
+        """ forward pass """
+        if not self.cross_attn:
+            tokens = tokens + time_embeds + y_embeds
+            output = self.net(tokens)
+        else:
+            x_ = tokens
+            context = time_embeds + y_embeds
+            for i, layer in enumerate(self.net.layers):
+                if i % 4 == 0:
+                    x_ = self.cross_attn_layers[i // 4](x_, context)
+                x_ = layer(x_)
+            output = self.net.norm(x_)
+
         pred = self.fc_out(output)
         pred = pred.reshape(B, L // self.sibling_num, self.sibling_num, -1)
         pred = pred.reshape(B, L, -1)
@@ -205,8 +242,9 @@ if __name__ == "__main__":
                     hidden_size=512,
                     no_a_embed=True,
                     real_noa=True,
-                    class_num=1,
-                    selftt=True).cuda()
+                    num_classes=1,
+                    cross_attn=True,
+                    selftt=False).cuda()
 
     t = torch.randint(0, 1024, (4,)).cuda()
     x = torch.randn(4, 256, 4).cuda()

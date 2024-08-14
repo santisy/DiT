@@ -93,6 +93,7 @@ def main(args):
         num_heads = config.model.num_heads
         reg_flag = (config.model.get("reg_flag", False) and l == 2)
         uncond_flag = (config.model.get("uncond_flag", False) and l == 1)
+        cross_attn = config.model.get("cross_attn", False)
 
         if isinstance(depth_total, (list, tuple)):
             depth = depth_total[l]
@@ -145,7 +146,7 @@ def main(args):
         model = model_class(
             # Data related
             in_channels=in_ch, # Combine to each children
-            num_classes=config.data.num_classes,
+            num_classes=dataset.class_num,
             condition_node_num=dataset.get_condition_num(l),
             condition_node_dim=dataset.get_condition_dim(l,
                                                          sibling_num,
@@ -170,7 +171,7 @@ def main(args):
             out_ch=out_ch,
             reg_flag=reg_flag,
             uncond_flag=uncond_flag,
-            class_num=dataset.class_num,
+            cross_attn=cross_attn,
             selftt=selftt
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
