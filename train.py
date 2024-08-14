@@ -265,7 +265,7 @@ def main(args):
     model = model_class(
         # Data related
         in_channels=in_ch, # Combine to each children
-        num_classes=config.data.num_classes,
+        num_classes=dataset.class_num,
         condition_node_num=dataset.get_condition_num(level_num),
         condition_node_dim=dataset.get_condition_dim(level_num,
                                                      sibling_num,
@@ -290,7 +290,6 @@ def main(args):
         out_ch=out_ch,
         reg_flag=reg_flag,
         uncond_flag=uncond_flag,
-        class_num=dataset.class_num,
         selftt=selftt
     ).to(device)
 

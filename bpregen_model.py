@@ -48,7 +48,7 @@ class PlainModel(nn.Module):
                  learn_sigma=False,
                  out_ch=None,
                  reg_flag=False,
-                 class_num=None,
+                 num_classes=None,
                  uncond_flag=False,
                  **kwargs
                  ):
@@ -66,10 +66,11 @@ class PlainModel(nn.Module):
         self.uncond_flag = uncond_flag
 
         # Class conditional related
-        if class_num is not None:
+        if num_classes is not None:
             y_embed_dim = 256
             self.class_cond_flag = True
-            self.class_embedding = nn.Embedding(class_num, y_embed_dim)
+            self.class_embedding = nn.Embedding(num_classes, y_embed_dim)
+            nn.init.normal_(self.class_embedding.weight, std=0.02)
             self.y_embed = nn.Sequential(
                 nn.Linear(y_embed_dim, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
