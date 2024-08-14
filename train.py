@@ -409,7 +409,7 @@ def main(args):
             # Noise augmentation
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             if reg_flag:
-                model_kwargs = dict(a=[], y=[], x0=[], positions=[])
+                model_kwargs = dict(a=[], y=y, x0=[], positions=[])
                 #x1 = noise_conditioning([x1,], a, diffusion)[0]
                 with autocast(enabled=not args.no_mixed_pr):
                     out = model(x1, None, **model_kwargs)
