@@ -170,6 +170,7 @@ def main(args):
             out_ch=out_ch,
             reg_flag=reg_flag,
             uncond_flag=uncond_flag,
+            class_num=dataset.class_num,
             selftt=selftt
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
@@ -284,15 +285,18 @@ def main(args):
             if rescale_flags[l]:
                 xc = [xc_ * 2.0 - 1.0 for xc_ in xc]
 
+            # Class number
+            y = torch.tensor([args.class_num,] * batch_size).long().to(device)
+
             model_kwargs = dict(a=a,
-                                y=None,
+                                y=y,
                                 x0=xc,
                                 positions=positions)
 
             # Sample
             with autocast():
                 if reg_flag and l == 2:
-                    model_kwargs = dict(a=[], y=[], x0=[], positions=[])
+                    model_kwargs = dict(a=[], y=y, x0=[], positions=[])
                     pre_x1 = xc[-1].reshape(batch_size, 2048, -1)
                     samples = model(pre_x1, None, **model_kwargs)
                 elif fm_flags[l]:
@@ -397,5 +401,6 @@ if __name__ == "__main__":
     parser.add_argument("--gt-l1", action="store_true",
                         help="GT l1 inspect")                        
     parser.add_argument("--use-latest", action="store_true") 
+    parser.add_argument("-c", "--class_num", type=int, default=0)
     args = parser.parse_args()
     main(args)
