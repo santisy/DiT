@@ -201,7 +201,10 @@ class PlainModel(nn.Module):
         # y (class lebel embed)
         if self.class_cond_flag:
             y_embeds = self.class_embedding(y)
-            y_embeds = self.y_embed(y_embeds).unsqueeze(dim=1)
+            y_embeds = self.y_embed(y_embeds)
+            y_embeds = y_embeds.unsqueeze(dim=1)
+        else:
+            y_embeds = 0
 
         # t (timestep) embed
         if self.flow_flag:
