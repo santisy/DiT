@@ -7,12 +7,16 @@
 """
 Sample new images from a pre-trained DiT.
 """
+import argparse
 import os
 import math
+
 import torch
 import torch.nn as nn
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+import numpy as np
+
 from diffusion import create_diffusion
 from diffusion.respace import SpacedDiffusion
 from ruamel.yaml import YAML
@@ -20,7 +24,6 @@ import random
 from easydict import EasyDict as edict
 from models import DiT
 
-import argparse
 from data.ofalg_dataset import OFLAGDataset
 from bpregen_model import PlainModel
 from data_extensions import load_utils
@@ -55,6 +58,7 @@ def main(args):
     debug_flag = args.debug
     gt_l0 = args.gt_l0
     gt_l1 = args.gt_l1
+    auto_complete = args.auto_complete
     if gt_l1:
         gt_l0 = True
     in_ch = dataset.get_level_vec_len(1)
@@ -146,7 +150,7 @@ def main(args):
         model = model_class(
             # Data related
             in_channels=in_ch, # Combine to each children
-            num_classes=dataset.class_num,
+            num_classes=dataset.class_num if not args.legacy else None,
             condition_node_num=dataset.get_condition_num(l),
             condition_node_dim=dataset.get_condition_dim(l,
                                                          sibling_num,
@@ -220,7 +224,7 @@ def main(args):
         scales = []
         decoded = []
         random.seed(i)
-        gt_id = int(len(dataset) * random.random())
+        gt_id = int(len(dataset) * random.random()) if args.gt_id is None else args.gt_id
         for l in range(3):
             # Random generator
             seed = i * 3 + l
@@ -237,6 +241,21 @@ def main(args):
             # Debug
             if debug_flag and l != 2:
                 continue
+
+            # Autocompete part
+            if auto_complete and l == 0:  
+                x0_raw, _, _, _, _ = dataset[gt_id]
+
+                x0 = dataset.denormalize(x0_raw.clone(), 0)
+                data = x0.numpy().copy()
+                data = np.concatenate([data[:, -7][:, None], data[:, -3:]], axis=1)
+                given_indices = np.where(data[:, -1] > 0.2)[0]
+
+                x0_raw = x0_raw[given_indices].unsqueeze(dim=0).to(device).float()
+                x0_given = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone()
+            else:
+                x0_given = None
+
             # GT l0
             if gt_l0 and l == 0:
                 x0_raw, _, _, _, _ = dataset[gt_id]
@@ -319,7 +338,8 @@ def main(args):
                                                     model_kwargs=model_kwargs,
                                                     clip_denoised=args.clip_denoised,
                                                     progress=False,
-                                                    device=device)
+                                                    device=device,
+                                                    partial_given=x0_given)
 
             if args.debug and l == 2:
                 import pdb; pdb.set_trace()
@@ -402,6 +422,15 @@ if __name__ == "__main__":
     parser.add_argument("--gt-l1", action="store_true",
                         help="GT l1 inspect")                        
     parser.add_argument("--use-latest", action="store_true") 
+
+    # Class conditional newly introduced args
     parser.add_argument("-c", "--class_num", type=int, default=0)
+    parser.add_argument("-l", "--legacy", action="store_true",
+                        help="Disable the class conditional layers.")
+
+    # Other tasks
+    parser.add_argument("--auto-complete", action="store_true")
+    parser.add_argument("--gt-id", type=int, default=None)
+
     args = parser.parse_args()
     main(args)

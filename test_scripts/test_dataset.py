@@ -23,35 +23,35 @@ from plot_dir.plot_tool import plot_root_aabb
 dataset = OFLAGDataset("/media/dya62/Data2/datasets/shapenetManifold/shapenet_airplane_discreteL1.zip", octree_root_num=256)
 print(f"class num {dataset.class_num}")
 
-#x0, x1, _, _, label = dataset[200]
-#print(x0.shape)
-#print(x1.shape)
-#print("Checking")
+x0, x1, _, _, label = dataset[200]
+print(x0.shape)
+print(x1.shape)
+print("Checking")
 
-loader = DataLoader(
-    dataset,
-    batch_size=6,
-    shuffle=True,
-    num_workers=6,
-    pin_memory=True,
-)
+#loader = DataLoader(
+#    dataset,
+#    batch_size=6,
+#    shuffle=True,
+#    num_workers=6,
+#    pin_memory=True,
+#)
+#
+#for x0, x1, _, _, y in loader:
+#    import pdb; pdb.set_trace()
+#    print(x0.shape)
+#    print(x1.shape)
+#    print(y)
+#    print(y.shape)
+#    print(type(y))
+#    exit()
 
-for x0, x1, _, _, y in loader:
-    print(x0.shape)
-    print(x1.shape)
-    print(y)
-    print(y.shape)
-    print(type(y))
-    exit()
-
-
-
-## Visualize the Grid to see the data loading correction or not
-#x0 = dataset.denormalize(x0, 0)
-#data = x0.numpy()
-#data = np.concatenate([data[:, -7][:, None], data[:, -3:]], axis=1)
-#data = data.tolist()
-#plot_root_aabb(data)
+# Visualize the Grid to see the data loading correction or not
+x0 = dataset.denormalize(x0, 0)
+data = x0.numpy()
+data = np.concatenate([data[:, -7][:, None], data[:, -3:]], axis=1)
+data = data[data[:, -1] > 0.2]
+data = data.tolist()
+plot_root_aabb(data)
 
 ## Test dumping to binary
 #x0_out = torch.zeros_like(x0)
