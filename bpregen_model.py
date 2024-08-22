@@ -35,12 +35,18 @@ class MiniCrossAttention(nn.Module):
                                                 dropout=dropout,
                                                 batch_first=batch_first)
         self.dropout = nn.Dropout(dropout)
-
-    def forward(self, src, cond):
+        self.layernorm = nn.LayerNorm(d_model, elementwise_affine=False)
+        self.linear = nn.Linear(d_model, d_model * 3)
+        nn.init.constant_(self.linear.weight, 0)
+        nn.init.constant_(self.linear.bias, 0)
+        
+    def forward(self, src, cond, t):
         # Perform cross-attention
-        src2 = self.cross_attn(src, cond, cond)[0]
+        scale, shift, scale2 = torch.chunk(self.linear(t), 3, dim=2)
+        src_ = self.layernorm(src) * (1 + scale) + shift
+        src2 = self.cross_attn(src_, cond, cond)[0]
         # Apply dropout and add residual connection
-        src = src + self.dropout(src2)
+        src = src + self.dropout(src2) * scale2
         return src
 
 class PlainModel(nn.Module):
@@ -226,10 +232,10 @@ class PlainModel(nn.Module):
             output = self.net(tokens)
         else:
             x_ = tokens
-            context = time_embeds + y_embeds
+            context = y_embeds
             for i, layer in enumerate(self.net.layers):
                 if i % 4 == 0:
-                    x_ = self.cross_attn_layers[i // 4](x_, context)
+                    x_ = self.cross_attn_layers[i // 4](x_, context, time_embeds)
                 x_ = layer(x_)
             output = self.net.norm(x_)
 
