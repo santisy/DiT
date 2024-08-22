@@ -611,7 +611,7 @@ class GaussianDiffusion:
         for i in indices:
             t = th.tensor([i] * shape[0], device=device)
 
-            if partial_given is not None and t[0].item() > 50:
+            if partial_given is not None:
                 p_N = partial_given.size(1)
                 img[:, :p_N] = self.q_sample(partial_given, t)
                 img = img.contiguous()

@@ -343,6 +343,7 @@ def main(args):
         num_workers=int(args.num_workers // dist.get_world_size()),
         pin_memory=True,
         prefetch_factor=2,
+        persistent_workers=True,
         drop_last=True
     )
     logger.info(f"Dataset contains {len(dataset):}")
