@@ -35,9 +35,14 @@ class MiniCrossAttention(nn.Module):
                                                 dropout=dropout,
                                                 batch_first=batch_first)
         self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(d_model)
 
     def forward(self, src, cond):
+        # Apply layer normalization first
+        src = self.layer_norm(src)
+        # Perform cross-attention
         src2 = self.cross_attn(src, cond, cond)[0]
+        # Apply dropout and add residual connection
         src = src + self.dropout(src2)
         return src
 
