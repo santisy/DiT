@@ -6,11 +6,20 @@ import random
 
 import torch
 from utils.chamfer_dist import chamfer_3DDist
+from emd import earth_mover_distance
 import trimesh
 from tqdm import tqdm
 from pysdf import SDF
 import numpy as np
 
+    
+def split_emd(x, y):
+    emd_dist_list = []
+    for g_, r_ in zip(x.split(40), y.split(40)):
+        emd_dist_list.append(earth_mover_distance(g_, r_, transpose=False))
+    emd_dist = torch.cat(emd_dist_list)
+
+    return emd_dist
 
 def normalize_mesh(mesh: trimesh.Geometry) -> trimesh.Geometry:
     # Calculate the bounding box
@@ -45,6 +54,9 @@ def measure_metrics(args):
     ref_mesh_list = random.sample(ref_mesh_list, sample_len)
     ref_points = []
 
+    # Sampled number of points
+    SAMPLE_NUM = 5000
+
     # Distance preparation
     chamfer_dist = chamfer_3DDist()
 
@@ -54,13 +66,13 @@ def measure_metrics(args):
         mesh = normalize_mesh(mesh)
         f = SDF(mesh.vertices, mesh.faces)
         # This is the numpy array of points of shape (5000, 3)
-        gen_points.append(f.sample_surface(5000))
+        gen_points.append(f.sample_surface(SAMPLE_NUM))
     for obj_path in tqdm(ref_mesh_list, desc="Sample points on reference meshes"):
         mesh = trimesh.load(obj_path)
         mesh = normalize_mesh(mesh)
         f = SDF(mesh.vertices, mesh.faces)
         # This is the numpy array of points of shape (5000, 3)
-        ref_points.append(f.sample_surface(5000))
+        ref_points.append(f.sample_surface(SAMPLE_NUM))
 
     # Formulate to torch tensor
     gen_points_tensor = torch.from_numpy(np.stack(gen_points, axis=0)).cuda()
@@ -75,12 +87,19 @@ def measure_metrics(args):
     cov_set = set()
     nna_indicator = 0
 
+    # EMD-related Metrics preparation accumulation
+    min_dist_emd = 0
+    cov_set_emd = set()
+    nna_indicator_emd = 0
+
     for i in tqdm(range(gen_n), desc="Calculating metrics on generated meshes"):
         gen_points_now = gen_points_tensor[i].unsqueeze(dim=0).repeat((total_points.shape[0] - 1, 1, 1))
         rest_points = torch.cat([total_points[:i], total_points[i+1:]], dim=0).contiguous()
         dist1, dist2, _, _ = chamfer_dist(gen_points_now, rest_points)
         dist = dist1.sum(dim=1) + dist2.sum(dim=1)
+        emd_dist = split_emd(gen_points_now, rest_points)
 
+        # CD ---------------
         # COV
         cov_set.add(torch.argmin(dist[gen_n-1:], dim=0).item())
         # MMD
@@ -90,16 +109,32 @@ def measure_metrics(args):
         if total_min < gen_n - 1:
             nna_indicator += 1
 
+        # EMD --------------
+        # COV
+        cov_set_emd.add(torch.argmin(emd_dist[gen_n-1:], dim=0).item())
+        # MMD
+        min_dist_emd += torch.min(emd_dist[gen_n-1:], dim=0)[0].item()
+        # 1-NNA: Belong to itself
+        total_min_emd = torch.argmin(emd_dist, dim=0).item()
+        if total_min_emd < gen_n - 1:
+            nna_indicator_emd += 1
+
     for i in tqdm(range(ref_n), desc="Calculating metrics on reference meshes"):
         ref_points_now = ref_points_tensor[i].unsqueeze(dim=0).repeat((total_points.shape[0] - 1, 1, 1))
         rest_points = torch.cat([total_points[:gen_n + i], total_points[gen_n + i+1:]], dim=0).contiguous()
         dist1, dist2, _, _ = chamfer_dist(ref_points_now, rest_points)
         dist = dist1.sum(dim=1) + dist2.sum(dim=1)
+        emd_dist = split_emd(ref_points_now, rest_points)
 
-        # 1-NNA: Belong to itself
+        # (CD) 1-NNA: Belong to itself
         total_min = torch.argmin(dist, dim=0).item()
         if total_min > gen_n - 1:
             nna_indicator += 1
+
+        # (EMD) 1-NNA: Belong to itself
+        total_min_emd = torch.argmin(emd_dist, dim=0).item()
+        if total_min_emd > gen_n - 1:
+            nna_indicator_emd += 1
 
     # Write the results
     f_.write("CD results:\n")
@@ -108,6 +143,15 @@ def measure_metrics(args):
     mmd_cd = min_dist / float(ref_n)
     f_.write(f"MMD: {mmd_cd:.2f}\t")
     nna_1 = nna_indicator / (float(gen_n + ref_n)) * 100
+    f_.write(f"1-NNA: {nna_1:.2f}%\t\n") 
+
+    # Write the results
+    f_.write("EMD results:\n")
+    cov_emd = len(cov_set_emd) / float(ref_n) * 100
+    f_.write(f"COV: {cov_emd:.2f}%\t")
+    mmd_emd = min_dist_emd / float(ref_n)
+    f_.write(f"MMD: {mmd_emd:.2f}\t")
+    nna_1 = nna_indicator_emd / (float(gen_n + ref_n)) * 100
     f_.write(f"1-NNA: {nna_1:.2f}%\t") 
 
     # Finalize
