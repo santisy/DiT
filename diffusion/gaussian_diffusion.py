@@ -536,6 +536,7 @@ class GaussianDiffusion:
         model_kwargs=None,
         device=None,
         progress=False,
+        partial_given=None
     ):
         """
         Generate samples from the model.
@@ -553,6 +554,7 @@ class GaussianDiffusion:
         :param device: if specified, the device to create the samples on.
                        If not specified, use a model parameter's device.
         :param progress: if True, show a tqdm progress bar.
+        :param partial_given: if not None, partially GT is given for autocomplete
         :return: a non-differentiable batch of samples.
         """
         final = None
@@ -565,6 +567,7 @@ class GaussianDiffusion:
             cond_fn=cond_fn,
             model_kwargs=model_kwargs,
             device=device,
+            partial_given=partial_given,
             progress=progress,
         ):
             final = sample
@@ -580,6 +583,7 @@ class GaussianDiffusion:
         cond_fn=None,
         model_kwargs=None,
         device=None,
+        partial_given=None,
         progress=False,
     ):
         """
@@ -606,6 +610,12 @@ class GaussianDiffusion:
 
         for i in indices:
             t = th.tensor([i] * shape[0], device=device)
+
+            if partial_given is not None:
+                p_N = partial_given.size(1)
+                img[:, :p_N] = self.q_sample(partial_given, t)
+                img = img.contiguous()
+
             with th.no_grad():
                 out = self.p_sample(
                     model,

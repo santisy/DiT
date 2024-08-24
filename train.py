@@ -222,6 +222,7 @@ def main(args):
     mlp_ratio = config.model.get("mlp_ratio")
     reg_flag = (config.model.get("reg_flag", False) and level_num == 2)
     uncond_flag = (config.model.get("uncond_flag", False) and level_num == 1)
+    cross_attn = config.model.get("cross_attn", False)
 
     if level_num == 2:
         in_ch = int(m ** 3)
@@ -265,7 +266,7 @@ def main(args):
     model = model_class(
         # Data related
         in_channels=in_ch, # Combine to each children
-        num_classes=config.data.num_classes,
+        num_classes=dataset.class_num,
         condition_node_num=dataset.get_condition_num(level_num),
         condition_node_dim=dataset.get_condition_dim(level_num,
                                                      sibling_num,
@@ -290,6 +291,7 @@ def main(args):
         out_ch=out_ch,
         reg_flag=reg_flag,
         uncond_flag=uncond_flag,
+        cross_attn=cross_attn,
         selftt=selftt
     ).to(device)
 
@@ -341,6 +343,7 @@ def main(args):
         num_workers=int(args.num_workers // dist.get_world_size()),
         pin_memory=True,
         prefetch_factor=2,
+        persistent_workers=True,
         drop_last=True
     )
     logger.info(f"Dataset contains {len(dataset):}")
@@ -377,7 +380,7 @@ def main(args):
                 x1 = (x1 * 2.0 - 1.0).detach()
                 x2 = (x2 * 2.0 - 1.0).detach()
 
-            y = y.to(device)
+            y = y.long().to(device)
 
             # According to the level_num set the training target x and the conditions
             if level_num == 0:
@@ -409,7 +412,7 @@ def main(args):
             # Noise augmentation
             model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
             if reg_flag:
-                model_kwargs = dict(a=[], y=[], x0=[], positions=[])
+                model_kwargs = dict(a=[], y=y, x0=[], positions=[])
                 #x1 = noise_conditioning([x1,], a, diffusion)[0]
                 with autocast(enabled=not args.no_mixed_pr):
                     out = model(x1, None, **model_kwargs)

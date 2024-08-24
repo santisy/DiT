@@ -1,10 +1,12 @@
 import json
+import io
 import glob
 import math
 import os
 
 from torch.utils.data import Dataset
 from data_extensions import load_utils
+from utils.parallelzipfile import ParallelZipFile as ZipFile
 
 
 class OFLAGDataset(Dataset):
@@ -18,18 +20,39 @@ class OFLAGDataset(Dataset):
                  **kwargs):
         super().__init__()
 
+        assert data_root.endswith(".zip")
+
         self._octree_root_num = octree_root_num
         self._unit_length0 = unit_length_list[0]
         self._unit_length1 = unit_length_list[1]
+        self._path = data_root
+        self._zipfile = None
 
-        stats_file = os.path.join(data_root, "stats.json")
-        assert os.path.isfile(stats_file)
-        with open(stats_file, "r") as f:
+        all_fnames = self._get_zipfile().namelist()
+        all_finfo = self._get_zipfile().infolist()
+
+        json_path = None
+        file_paths = []
+        label_count = 0
+        self.label_dict = {}
+        for fname, finfo in zip(all_fnames, all_finfo):
+            if os.path.basename(fname) == "stats.json":
+                json_path = fname
+                continue
+            if os.path.basename(fname).endswith(".bin") and finfo.file_size > 1 * 1024 * 1024:
+                class_name = os.path.basename(fname).split("_")[0]
+                if class_name not in self.label_dict:
+                    self.label_dict[class_name] = label_count
+                    label_count += 1
+                file_paths.append(fname)
+
+        if json_path is None:
+            raise RuntimeError(f"No stats.json found in the zip file.")
+        with self._open_file(json_path) as f:
             self._stats = json.load(f)
 
-        file_paths = glob.glob(os.path.join(data_root, "*.bin"))
-        if not only_infer:
-            file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
+        #if not only_infer:
+        #    file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
 
         # Split the dataset to validate one if required
         if validate_flag:
@@ -41,8 +64,23 @@ class OFLAGDataset(Dataset):
             else:
                 self.file_paths = file_paths
 
+    def _get_zipfile(self):
+        if self._zipfile is None:
+            self._zipfile = ZipFile(self._path)
+        return self._zipfile
+
+    def _open_file(self, fname):
+        return io.BytesIO(self._get_zipfile().read(fname))
+
+    def _open_bytes(self, fname):
+        return self._get_zipfile().read(fname)
+
     def __len__(self):
         return len(self.file_paths)
+
+    @property
+    def class_num(self):
+        return len(self.label_dict)
 
     def get_ref_objects(self):
         pass
@@ -145,9 +183,11 @@ class OFLAGDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.file_paths[idx]
+        class_name = os.path.basename(file_path).split("_")[0]
+
         level0_tensor, level1_tensor, \
         level0_position, level1_position \
-            = load_utils.load(file_path,
+            = load_utils.load(self._open_bytes(file_path),
                               self._unit_length0,
                               self._unit_length1)
 
@@ -158,7 +198,7 @@ class OFLAGDataset(Dataset):
         self.normalize(level1_tensor, 1)
 
         # Dummy label
-        label = -1
+        label = self.label_dict[class_name]
 
         return level0_tensor, level1_tensor,  \
                level0_position, level1_position, label
