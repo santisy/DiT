@@ -266,7 +266,7 @@ def main(args):
     model = model_class(
         # Data related
         in_channels=in_ch, # Combine to each children
-        num_classes=None,#dataset.class_num,
+        num_classes=dataset.class_num,
         condition_node_num=dataset.get_condition_num(level_num),
         condition_node_dim=dataset.get_condition_dim(level_num,
                                                      sibling_num,
