@@ -362,6 +362,11 @@ def main(args):
     start_time = time()
 
     logger.info(f"Training for {args.epochs} epochs...")
+
+    # Clear cache when reuming experiment
+    del resume_ckpt
+    torch.cuda.empty_cache()
+
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
