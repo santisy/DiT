@@ -29,24 +29,35 @@ def sincos_embedding(input, dim, max_period=10000):
     return embedding
 
 class MiniCrossAttention(nn.Module):
-    def __init__(self, d_model, nhead, batch_first=True, dropout=0.1):
+    def __init__(self, d_model, nhead, no_t=False, batch_first=True, dropout=0.1):
         super().__init__()
+        self.no_t = no_t
         self.cross_attn = nn.MultiheadAttention(d_model, nhead,
                                                 dropout=dropout,
                                                 batch_first=batch_first)
         self.dropout = nn.Dropout(dropout)
-        self.layernorm = nn.LayerNorm(d_model, elementwise_affine=False)
-        self.linear = nn.Linear(d_model, d_model * 3)
-        nn.init.constant_(self.linear.weight, 0)
-        nn.init.constant_(self.linear.bias, 0)
+        
+        if not no_t: 
+            self.layernorm = nn.LayerNorm(d_model, elementwise_affine=False)
+            self.linear = nn.Linear(d_model, d_model * 3)
+            nn.init.constant_(self.linear.weight, 0)
+            nn.init.constant_(self.linear.bias, 0)
+        else:
+            self.layernorm = nn.LayerNorm(d_model)
         
     def forward(self, src, cond, t):
-        # Perform cross-attention
-        scale, shift, scale2 = torch.chunk(self.linear(t), 3, dim=2)
-        src_ = self.layernorm(src) * (1 + scale) + shift
-        src2 = self.cross_attn(src_, cond, cond)[0]
-        # Apply dropout and add residual connection
-        src = src + self.dropout(src2) * scale2
+        if not self.no_t:
+            # Perform cross-attention
+            scale, shift, scale2 = torch.chunk(self.linear(t), 3, dim=2)
+            src_ = self.layernorm(src) * (1 + scale) + shift
+            src2 = self.cross_attn(src_, cond, cond)[0]
+            # Apply dropout and add residual connection
+            src = src + self.dropout(src2) * scale2
+        else:
+            src_ = self.layernorm(src)
+            src2 = self.cross_attn(src_, cond, cond)[0]
+            # Apply dropout and add residual connection
+            src = src + self.dropout(src2)
         return src
 
 class PlainModel(nn.Module):
@@ -117,6 +128,7 @@ class PlainModel(nn.Module):
                 self.cross_attn_layers = nn.ModuleList()
                 for _ in range(depth // 4):
                     self.cross_attn_layers.append(MiniCrossAttention(self.embed_dim,
+                                                                     no_t=reg_flag,
                                                                      nhead=num_heads,
                                                                      batch_first=True,
                                                                      dropout=0.1))
