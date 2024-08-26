@@ -160,6 +160,7 @@ def main(args):
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
     seed = args.global_seed * dist.get_world_size() + rank
+    torch.cuda.set_device(device)
 
     map_fn = lambda storage, loc: storage.cuda() if torch.cuda.is_available() else storage
     # Resume
@@ -177,7 +178,6 @@ def main(args):
     # Set seed according to the training_steps
     seed = seed + train_steps
     torch.manual_seed(seed)
-    torch.cuda.set_device(device)
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
     # Setup an experiment folder:
