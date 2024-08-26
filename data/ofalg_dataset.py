@@ -180,6 +180,15 @@ class OFLAGDataset(Dataset):
             j += 3
             x[:, j:j + 3] = (x[:, j:j + 3] - self._stats[f"rel_p_{l}_min"]) / (self._stats[f"rel_p_{l}_max"] - self._stats[f"rel_p_{l}_min"])
 
+    def denormalize_l0(self, x):
+        x[:, :, 0] = x[:, :, 0] * (self._stats["abs_s_0_max"] - self._stats["abs_s_0_min"]) + self._stats["abs_s_0_min"]
+        x[:, :, 1:] = x[:, :, 1:] * (self._stats["abs_p_0_max"] - self._stats["abs_p_0_min"]) + self._stats["abs_p_0_min"]
+        return x.contiguous().detach()
+
+    def normalize_l0(self, x):
+        x[:, :, 0] = (x[:, :, 0] - self._stats["abs_s_0_min"]) / (self._stats["abs_s_0_max"] - self._stats["abs_s_0_min"])
+        x[:, :, 1:] = (x[:, :, 1:] - self._stats["abs_p_0_min"]) / (self._stats["abs_p_0_max"] - self._stats["abs_p_0_min"])
+        return x.contiguous().detach()
 
     def __getitem__(self, idx):
         file_path = self.file_paths[idx]

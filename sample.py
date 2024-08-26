@@ -49,6 +49,9 @@ def main(args):
 
     # Create dataset. For denormalizing
     dataset = OFLAGDataset(args.data_root, only_infer=True, **config_list[0].data)
+    if args.legacy_plus:
+        dataset_legacy = OFLAGDataset("datasets/shapenet_airplane_discreteL1.zip",
+                                      only_infer=True, **config_list[0].data)
 
     # Setup PyTorch:
     torch.manual_seed(args.seed)
@@ -355,11 +358,18 @@ def main(args):
                 samples = samples.float().clip_(-1, 1)
                 samples = (samples + 1.0) / 2.0
                 samples = samples.detach()
+            
+            # Denormalize and then normalize as legacy to correct the normalization
+            if args.legacy_plus and l == 0:
+                samples = dataset.denormalize_l0(samples)
+                samples = dataset_legacy.normalize_l0(samples)
 
+            # Fold accordingly if required at l == 1 for the unflat case
             if l == 1:
                 B, L, C = samples.shape
                 samples = samples.reshape(B, L // sibling_num, -1).contiguous()
                 x2_non_V = samples.detach()
+
             xc.append(samples.clone())
 
             if noa_flags[l] and l > 0:
@@ -393,7 +403,10 @@ def main(args):
         for j in range(batch_size):
             x0 = dataset.denormalize(decoded[0][j], 0).detach().cpu()
             if not args.only_l0:
-                x1 = dataset.denormalize(decoded[1][j], 1).detach().cpu()
+                if not args.legacy_plus:
+                    x1 = dataset.denormalize(decoded[1][j], 1).detach().cpu()
+                else:
+                    x1 = dataset_legacy.denormalize(decoded[1][j], 1).detach().cpu()
             else:
                 x1 = torch.zeros(dataset.octree_root_num * 8,
                                  dataset.get_level_vec_len(1) - 4)
