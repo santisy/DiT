@@ -39,6 +39,8 @@ def plot_root_aabb_list(root_list, fig, color="red"):
             z_coords = [vertices[start][2], vertices[end][2]]
             fig.add_trace(go.Scatter3d(x=x_coords, y=y_coords, z=z_coords, mode='lines', line=dict(color=color))) 
 
+        fig.update_layout(scene_aspectmode='data')
+
 def plot_root_aabb(root_list, other_root=None, camera=None, dst_path=None):
     fig = go.Figure()
     plot_root_aabb_list(root_list, fig, "red")

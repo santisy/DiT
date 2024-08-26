@@ -1,13 +1,13 @@
 model:
-    depth: [24, 24, 28]
-    mlp_ratio: 2.0
-    cross_layers: [0, 4, 8, 12, 16, 20, 24]
+    depth: [24, 24, 24]
+    mlp_ratio: 4.0
+    cross_layers: [0, 4, 8, 12, 16, 20]
     num_heads: 16
     add_inject: true
     pos_emedding_version: "v2"
-    hidden_sizes: [1024, 1024, 1152]
-    align_gen: [false, false, true]
-    sibling_num: [1, 1, 2]
+    hidden_sizes: [1024, 1280, 1024]
+    align_gen: [false, true, true]
+    sibling_num: [1, 2, 2]
     use_EDM: false
     plain_model: [true, true, false]
     noa_flag: true

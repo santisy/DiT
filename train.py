@@ -160,9 +160,6 @@ def main(args):
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
     seed = args.global_seed * dist.get_world_size() + rank
-    torch.manual_seed(seed)
-    torch.cuda.set_device(device)
-    print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
     map_fn = lambda storage, loc: storage.cuda() if torch.cuda.is_available() else storage
     # Resume
@@ -171,6 +168,17 @@ def main(args):
         print(f"\033[92mResume from checkpoint {args.resume}.\033[00m")
     else:
         resume_ckpt = None
+
+    # Load train_steps at the beginning in order to avoid repeat training data
+    train_steps = 0
+    if resume_ckpt is not None:
+        train_steps = resume_ckpt.get("train_steps", 0)
+    
+    # Set seed according to the training_steps
+    seed = seed + train_steps
+    torch.manual_seed(seed)
+    torch.cuda.set_device(device)
+    print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
     # Setup an experiment folder:
     if rank == 0:
@@ -333,7 +341,7 @@ def main(args):
         num_replicas=dist.get_world_size(),
         rank=rank,
         shuffle=True,
-        seed=args.global_seed
+        seed=int(args.global_seed + train_steps)
     )
     loader = DataLoader(
         dataset,
@@ -354,9 +362,6 @@ def main(args):
     ema.eval()  # EMA model should always be in eval mode
 
     # Variables for monitoring/logging purposes:
-    train_steps = 0
-    if resume_ckpt is not None:
-        train_steps = resume_ckpt.get("train_steps", 0)
     log_steps = 0
     running_loss = 0
     start_time = time()

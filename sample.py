@@ -145,12 +145,16 @@ def main(args):
         else:
             out_ch = None
 
+        if args.legacy or (args.legacy_plus and l >= 1):
+            num_classes = None
+        else:
+            num_classes = dataset.class_num
 
         # Create DiT model
         model = model_class(
             # Data related
             in_channels=in_ch, # Combine to each children
-            num_classes=dataset.class_num if not args.legacy else None,
+            num_classes= num_classes,
             condition_node_num=dataset.get_condition_num(l),
             condition_node_dim=dataset.get_condition_dim(l,
                                                          sibling_num,
@@ -427,6 +431,8 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--class_num", type=int, default=0)
     parser.add_argument("-l", "--legacy", action="store_true",
                         help="Disable the class conditional layers.")
+    parser.add_argument("--legacy-plus", action="store_true",
+                        help="Legacy plus.")
 
     # Other tasks
     parser.add_argument("--auto-complete", action="store_true")
