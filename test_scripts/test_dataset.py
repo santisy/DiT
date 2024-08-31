@@ -20,15 +20,19 @@ from plot_dir.plot_tool import plot_root_aabb
 #    config = edict(yaml.load(f))
 #sampler = create_diffusion(timestep_respacing="", **config.diffusion)
 
-dataset = OFLAGDataset("/media/dya62/Data3/datasets/shapenet_all_discreteL1.zip", octree_root_num=256)
+dataset = OFLAGDataset("./datasets/shapenet_all_discreteL1.zip", octree_root_num=256)
+#dataset = OFLAGDataset("./datasets/shapenet_airplane_discreteL1.zip", octree_root_num=256)
+
 print(f"class num {dataset.class_num}")
 
 x0, x1, _, _, label = dataset[10000]
+print(dataset.label_dict)
 print(f"Dataset size is {len(dataset)}")
 print(x0.shape)
 print(x1.shape)
 print(label)
 print("Checking")
+print(dataset._stats)
 
 #loader = DataLoader(
 #    dataset,
@@ -47,13 +51,13 @@ print("Checking")
 #    print(type(y))
 #    exit()
 
-# Visualize the Grid to see the data loading correction or not
-x0 = dataset.denormalize(x0, 0)
-data = x0.numpy()
-data = np.concatenate([data[:, -7][:, None], data[:, -3:]], axis=1)
-#data = data[data[:, -1] > 0.2]
-data = data.tolist()
-plot_root_aabb(data)
+## Visualize the Grid to see the data loading correction or not
+#x0 = dataset.denormalize(x0, 0)
+#data = x0.numpy()
+#data = np.concatenate([data[:, -7][:, None], data[:, -3:]], axis=1)
+##data = data[data[:, -1] > 0.2]
+#data = data.tolist()
+#plot_root_aabb(data)
 
 ## Test dumping to binary
 #x0_out = torch.zeros_like(x0)
