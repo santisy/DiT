@@ -12,6 +12,7 @@ from utils.parallelzipfile import ParallelZipFile as ZipFile
 class OFLAGDataset(Dataset):
     def __init__(self,
                  data_root: str,
+                 no_data_aug: bool=False,
                  octree_root_num: int=64,
                  unit_length_list = [361, 139],
                  only_infer=False,
@@ -39,6 +40,8 @@ class OFLAGDataset(Dataset):
             if os.path.basename(fname) == "stats.json":
                 json_path = fname
                 continue
+            if no_data_aug and "FPSInit0" not in fname: 
+                continue
             if os.path.basename(fname).endswith(".bin") and finfo.file_size > 1 * 1024 * 1024:
                 class_name = os.path.basename(fname).split("_")[0]
                 if class_name not in self.label_dict:
@@ -63,6 +66,7 @@ class OFLAGDataset(Dataset):
                 self.file_paths = file_paths[:-validate_num]
             else:
                 self.file_paths = file_paths
+
 
     def _get_zipfile(self):
         if self._zipfile is None:

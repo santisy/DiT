@@ -189,7 +189,7 @@ def main(args):
         ckpt_path = args.ckpt[l]
         print(f"\033[92mLoading model level {l}: {ckpt_path}.\033[00m")
         model_ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
-        if args.use_latest or reg_flag:
+        if args.use_latest: #or reg_flag:
             model.load_state_dict(model_ckpt["model"])
         else:
             model.load_state_dict(model_ckpt["ema"])
@@ -226,6 +226,7 @@ def main(args):
         sample_num = dataset.get_sample_num()
         print(f"\033[92mSample all five percent objects {sample_num}.\033[00m")
     for i in range(sample_num // batch_size + 1):
+        i = i + args.started_id
         xc = []
         positions = []
         scales = []
@@ -439,6 +440,7 @@ if __name__ == "__main__":
     parser.add_argument("--gt-l1", action="store_true",
                         help="GT l1 inspect")                        
     parser.add_argument("--use-latest", action="store_true") 
+    parser.add_argument("--started-id", type=int, default=0)
 
     # Class conditional newly introduced args
     parser.add_argument("-c", "--class_num", type=int, default=0)

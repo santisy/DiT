@@ -201,7 +201,9 @@ def main(args):
         logger = create_logger(None)
 
     # Create dataset
-    dataset = OFLAGDataset(args.data_root, **config.data)
+    dataset = OFLAGDataset(args.data_root,
+                           no_data_aug=args.no_data_aug,
+                           **config.data)
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
     n_timesteps = config.diffusion.diffusion_steps
@@ -539,6 +541,7 @@ if __name__ == "__main__":
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--no-mixed-pr", action="store_true")
     parser.add_argument("--gradient-clipping", action="store_true")
+    parser.add_argument("--no-data-aug", action="store_true")
 
     args = parser.parse_args()
     main(args)
