@@ -38,6 +38,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import GradScaler, autocast
 from modules.edm import EDMPrecond, EDMLoss
 
+from transformers import T5Tokenizer, T5EncoderModel
 from data.ofalg_dataset import OFLAGDataset
 from utils.copy import copy_back_fn
 
@@ -200,9 +201,13 @@ def main(args):
     else:
         logger = create_logger(None)
 
+    # Conditioned on text or not
+    text_cond = config.model.get("text_cond", False)
+
     # Create dataset
     dataset = OFLAGDataset(args.data_root,
                            no_data_aug=args.no_data_aug,
+                           text_cond=text_cond,
                            **config.data)
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
@@ -302,6 +307,7 @@ def main(args):
         reg_flag=reg_flag,
         uncond_flag=uncond_flag,
         cross_attn=cross_attn,
+        text_cond=text_cond,
         selftt=selftt
     ).to(device)
 
@@ -314,6 +320,11 @@ def main(args):
         edm_loss = EDMLoss()
     else:
         diffusion = create_diffusion(timestep_respacing="", **config.diffusion)
+
+    # Create text tokenizers and text encoder if cond on texts
+    if text_cond:
+        tokenizer = T5Tokenizer.from_pretrained('t5-base')
+        t5_encoder = T5EncoderModel.from_pretrained('t5-base').to(device)
 
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model)  # Create an EMA of the model for use after training
@@ -392,7 +403,14 @@ def main(args):
                 x1 = (x1 * 2.0 - 1.0).detach()
                 x2 = (x2 * 2.0 - 1.0).detach()
 
-            y = y.long().to(device)
+            if not text_cond:
+                y = y.long().to(device)
+            else:
+                encoded_inputs = tokenizer(y, return_tensors='pt', padding=True, truncation=True)
+                encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()}
+                with torch.no_grad():
+                    encoder_outputs = t5_encoder(**encoded_inputs)
+                y = encoder_outputs.last_hidden_state
 
             # According to the level_num set the training target x and the conditions
             if level_num == 0:

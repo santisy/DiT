@@ -1,6 +1,5 @@
 import json
 import io
-import glob
 import math
 import os
 
@@ -18,6 +17,7 @@ class OFLAGDataset(Dataset):
                  only_infer=False,
                  validate_num=0,
                  validate_flag=False,
+                 text_cond=False,
                  **kwargs):
         super().__init__()
 
@@ -28,31 +28,45 @@ class OFLAGDataset(Dataset):
         self._unit_length1 = unit_length_list[1]
         self._path = data_root
         self._zipfile = None
+        self._text_cond = text_cond
 
         all_fnames = self._get_zipfile().namelist()
         all_finfo = self._get_zipfile().infolist()
 
-        json_path = None
+        stats_json_path = None
+        texts_json_path = None
         file_paths = []
         label_count = 0
-        self.label_dict = {}
-        for fname, finfo in zip(all_fnames, all_finfo):
-            if os.path.basename(fname) == "stats.json":
-                json_path = fname
+        if not text_cond:
+            self.label_dict = {}
+
+        for fpath, finfo in zip(all_fnames, all_finfo):
+            fname = os.path.basename(fpath)
+            if fname == "stats.json":
+                stats_json_path = fname
+                continue
+            if fname == "texts.json":
+                texts_json_path = fname
                 continue
             if no_data_aug and "FPSInit0" not in fname: 
                 continue
-            if os.path.basename(fname).endswith(".bin") and finfo.file_size > 1 * 1024 * 1024:
-                class_name = os.path.basename(fname).split("_")[0]
-                if class_name not in self.label_dict:
-                    self.label_dict[class_name] = label_count
-                    label_count += 1
-                file_paths.append(fname)
+            if fname.endswith(".bin") and finfo.file_size > 1 * 1024 * 1024:
+                file_paths.append(fpath)
+                if not text_cond:
+                    class_name = fname.split("_")[0]
+                    if class_name not in self.label_dict:
+                        self.label_dict[class_name] = label_count
+                        label_count += 1
 
-        if json_path is None:
+        if stats_json_path is None:
             raise RuntimeError(f"No stats.json found in the zip file.")
-        with self._open_file(json_path) as f:
+        with self._open_file(stats_json_path) as f:
             self._stats = json.load(f)
+        if text_cond:
+            if texts_json_path is None:
+                raise RuntimeError(f"No texts.json found in the zip file.")
+            with self._open_file(texts_json_path) as f:
+                self._texts = json.load(f)
 
         #if not only_infer:
         #    file_paths = [file for file in file_paths if os.path.getsize(file) > 1 * 1024 * 1024]
@@ -84,7 +98,10 @@ class OFLAGDataset(Dataset):
 
     @property
     def class_num(self):
-        return len(self.label_dict)
+        if not self._text_cond:
+            return len(self.label_dict)
+        else:
+            return None
 
     def get_ref_objects(self):
         pass
@@ -194,8 +211,9 @@ class OFLAGDataset(Dataset):
         x[:, :, 1:] = (x[:, :, 1:] - self._stats["abs_p_0_min"]) / (self._stats["abs_p_0_max"] - self._stats["abs_p_0_min"])
         return x.contiguous().detach()
 
-    def __getitem__(self, idx):
-        file_path = self.file_paths[idx]
+    # Temp
+    def get_by_name(self, name):
+        file_path = f'shapenet_all_discreteL1/{name}_manifold_rootNum256_FPSInit0_vecs.bin'
         class_name = os.path.basename(file_path).split("_")[0]
 
         level0_tensor, level1_tensor, \
@@ -212,6 +230,32 @@ class OFLAGDataset(Dataset):
 
         # Dummy label
         label = self.label_dict[class_name]
+
+        return level0_tensor, level1_tensor,  \
+               level0_position, level1_position, label
+
+    def __getitem__(self, idx):
+        file_path = self.file_paths[idx]
+        # Class name or uid of objaverse
+        id = os.path.basename(file_path).split("_")[0]
+
+        level0_tensor, level1_tensor, \
+        level0_position, level1_position \
+            = load_utils.load(self._open_bytes(file_path),
+                              self._unit_length0,
+                              self._unit_length1)
+
+        assert level0_tensor.size(0) == self._octree_root_num 
+
+
+        self.normalize(level0_tensor, 0)
+        self.normalize(level1_tensor, 1)
+
+        # Dummy label
+        if not self._text_cond:
+            label = self.label_dict[id]
+        else:
+            label = self._texts[id] # Called label, but a text description
 
         return level0_tensor, level1_tensor,  \
                level0_position, level1_position, label

@@ -10,3 +10,5 @@ pip install ruamel.yaml
 pip install easydict
 pip install einops
 pip install torchdiffeq
+pip install transformers
+pip install sentencepiece

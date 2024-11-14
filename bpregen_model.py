@@ -84,6 +84,7 @@ class PlainModel(nn.Module):
                  num_classes=None,
                  uncond_flag=False,
                  cross_attn=False,
+                 text_cond=False,
                  **kwargs
                  ):
 
@@ -99,6 +100,7 @@ class PlainModel(nn.Module):
         self.reg_flag = reg_flag
         self.uncond_flag = uncond_flag
         self.cross_attn = cross_attn
+        self.text_cond_flag = text_cond
 
         # Class conditional related
         if num_classes is not None:
@@ -114,6 +116,8 @@ class PlainModel(nn.Module):
             ) 
         else:
             self.class_cond_flag = False
+        if text_cond:
+            self.y_embed = nn.Linear(768, self.embed_dim)
 
 
         if not selftt:
@@ -223,6 +227,8 @@ class PlainModel(nn.Module):
             y_embeds = self.class_embedding(y)
             y_embeds = self.y_embed(y_embeds)
             y_embeds = y_embeds.unsqueeze(dim=1)
+        elif self.text_cond_flag:
+            y_embeds = self.y_embed(y)
         else:
             y_embeds = 0
 
@@ -259,19 +265,33 @@ class PlainModel(nn.Module):
 
 if __name__ == "__main__":
     from torch.cuda.amp import autocast
+    from transformers import T5Tokenizer, T5EncoderModel
     net = PlainModel(4,
                     depth=12,
-                    num_heads=16,
+                    num_heads=8,
                     hidden_size=512,
                     no_a_embed=True,
                     real_noa=True,
-                    num_classes=1,
+                    num_classes=None,
                     cross_attn=True,
+                    text_cond=True,
                     selftt=False).cuda()
+
+    tokenizer = T5Tokenizer.from_pretrained('t5-base')
+    t5_encoder = T5EncoderModel.from_pretrained('t5-base').cuda()
 
     t = torch.randint(0, 1024, (4,)).cuda()
     x = torch.randn(4, 256, 4).cuda()
-    y = torch.tensor([0,] * 4).long().cuda()
+    texts = ["A dog.",
+             "A bottle where flower inside.",
+             "A fancy earphone.",
+             "A firing car."]
+
+    encoded_inputs = tokenizer(texts, return_tensors='pt', padding=True, truncation=True)
+    encoded_inputs = {key: value.cuda() for key, value in encoded_inputs.items()}
+    with torch.no_grad():
+        encoder_outputs = t5_encoder(**encoded_inputs)
+    y = encoder_outputs.last_hidden_state
 
     with autocast(enabled=True):
         out = net(x, t, y=y)
