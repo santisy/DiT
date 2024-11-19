@@ -406,7 +406,7 @@ def main(args):
             if not text_cond:
                 y = y.long().to(device)
             else:
-                encoded_inputs = tokenizer(y, return_tensors='pt', padding=True, truncation=True)
+                encoded_inputs = tokenizer(y, return_tensors='pt', padding=True, truncation=True, max_length=128)
                 encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()}
                 with torch.no_grad():
                     encoder_outputs = t5_encoder(**encoded_inputs)
