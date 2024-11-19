@@ -43,10 +43,10 @@ class OFLAGDataset(Dataset):
         for fpath, finfo in zip(all_fnames, all_finfo):
             fname = os.path.basename(fpath)
             if fname == "stats.json":
-                stats_json_path = fname
+                stats_json_path = fpath
                 continue
             if fname == "texts.json":
-                texts_json_path = fname
+                texts_json_path = fpath
                 continue
             if no_data_aug and "FPSInit0" not in fname: 
                 continue
