@@ -10,6 +10,7 @@ Sample new images from a pre-trained DiT.
 import argparse
 import os
 import math
+import random
 
 import torch
 import torch.nn as nn
@@ -19,8 +20,8 @@ import numpy as np
 
 from diffusion import create_diffusion
 from diffusion.respace import SpacedDiffusion
+from transformers import T5Tokenizer, T5EncoderModel
 from ruamel.yaml import YAML
-import random
 from easydict import EasyDict as edict
 from models import DiT
 
@@ -28,7 +29,8 @@ from data.ofalg_dataset import OFLAGDataset
 from bpregen_model import PlainModel
 from data_extensions import load_utils
 from torch.cuda.amp import autocast
-from transport import create_transport, Sampler
+# TODO: fix the this
+#from transport import create_transport, Sampler
 
 
 def count_parameters_in_millions(model: nn.Module) -> float:
@@ -37,8 +39,8 @@ def count_parameters_in_millions(model: nn.Module) -> float:
 
 def main(args):
     # Make directories
-    os.makedirs(args.export_dir, exist_ok=True)
     out_dir = args.export_dir
+    os.makedirs(out_dir, exist_ok=True)
 
     # Load config
     config_list = []
@@ -48,7 +50,10 @@ def main(args):
             config_list.append(edict(yaml.load(f)))
 
     # Create dataset. For denormalizing
-    dataset = OFLAGDataset(args.data_root, only_infer=True, **config_list[0].data)
+    dataset = OFLAGDataset(args.data_root,
+                           only_infer=True,
+                           text_cond=(args.input_text != ""),
+                           **config_list[0].data)
     if args.legacy_plus:
         dataset_legacy = OFLAGDataset("datasets/shapenet_airplane_discreteL1.zip",
                                       only_infer=True, **config_list[0].data)
@@ -62,7 +67,8 @@ def main(args):
     gt_l0 = args.gt_l0
     gt_l1 = args.gt_l1
     auto_complete = args.auto_complete
-    if gt_l1:
+    auto_complete2 = args.auto_complete2
+    if gt_l1 or auto_complete2:
         gt_l0 = True
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
@@ -78,6 +84,7 @@ def main(args):
     m_ = None
     reg_flag = False
     uncond_flag = False
+    text_cond = False
 
     for l in range(3):
         config = config_list[l]
@@ -101,6 +108,7 @@ def main(args):
         reg_flag = (config.model.get("reg_flag", False) and l == 2)
         uncond_flag = (config.model.get("uncond_flag", False) and l == 1)
         cross_attn = config.model.get("cross_attn", False)
+        text_cond = config.model.get("text_cond", False)
 
         if isinstance(depth_total, (list, tuple)):
             depth = depth_total[l]
@@ -183,6 +191,7 @@ def main(args):
             reg_flag=reg_flag,
             uncond_flag=uncond_flag,
             cross_attn=cross_attn,
+            text_cond=text_cond,
             selftt=selftt
         )
         # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
@@ -217,7 +226,22 @@ def main(args):
         if args.only_l0:
             break
 
+    # Parse the texts
+    y = None
+    if text_cond:
+        tokenizer = T5Tokenizer.from_pretrained('t5-base')
+        t5_encoder = T5EncoderModel.from_pretrained('t5-base').to(device)
+        encoded_inputs = tokenizer([args.input_text,],
+                                   return_tensors='pt',
+                                   padding=True,
+                                   truncation=True,
+                                   max_length=128)
+        encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()}
+        with torch.no_grad():
+            encoder_outputs = t5_encoder(**encoded_inputs)
+        y = encoder_outputs.last_hidden_state.detach()
 
+    # Begin the main sampling loops of different levels
     batch_size = args.sample_batch_size
     sample_num = args.sample_num
     if uncond_flag:
@@ -226,14 +250,19 @@ def main(args):
         sample_num = dataset.get_sample_num()
         print(f"\033[92mSample all five percent objects {sample_num}.\033[00m")
     for i in range(sample_num // batch_size + 1):
-        i = i + args.started_id
+        i = i + args.start_id
         xc = []
         positions = []
         scales = []
         decoded = []
         random.seed(i)
         gt_id = int(len(dataset) * random.random()) if args.gt_id is None else args.gt_id
+        # Autocomplete import
+        given_indices = None
+
         for l in range(3):
+            x_given = None
+
             # Random generator
             seed = i * 3 + l
             if args.l0_seed is not None and l == 0:
@@ -252,21 +281,55 @@ def main(args):
 
             # Autocompete part
             if auto_complete and l == 0:  
-                x0_raw, _, _, _, _ = dataset[gt_id]
+                x0_raw, _, _, _, _ = dataset.get_by_name("airplane_000026")
 
                 x0 = dataset.denormalize(x0_raw.clone(), 0)
                 data = x0.numpy().copy()
                 data = np.concatenate([data[:, -7][:, None], data[:, -3:]], axis=1)
-                given_indices = np.where(data[:, -1] > 0.2)[0]
+                given_indices_ = np.where(data[:, -1] > 0.2)[0]
+                data = data[data[:, -1] > 0.2]
 
-                x0_raw = x0_raw[given_indices].unsqueeze(dim=0).to(device).float()
-                x0_given = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone()
-            else:
-                x0_given = None
+                x0_raw = x0_raw[given_indices_]
+                x0_raw = x0_raw.unsqueeze(dim=0).to(device).float()
+                x_given = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone()
+
+                with open(f"{out_dir}/given_partial_roots.txt", "w") as f:
+                    for root in data:
+                        s, x, y, z = root
+                        x_min = x - s * 0.5
+                        x_max = x + s * 0.5
+                        y_min = y - s * 0.5
+                        y_max = y + s * 0.5
+                        z_min = z - s * 0.5
+                        z_max = z + s * 0.5
+                        f.write(f"{x_min:.4f},{x_max:.4f},{y_min:.4f},{y_max:.4f},{z_min:.4f},{z_max:.4f}\n")
 
             # GT l0
             if gt_l0 and l == 0:
-                x0_raw, _, _, _, _ = dataset[gt_id]
+                x0_raw, _, _, _, _ = dataset.get_by_name("chair_000062")
+
+                if auto_complete2:
+                    x0 = dataset.denormalize(x0_raw.clone(), 0)
+                    data = x0.numpy().copy()
+                    data = np.concatenate([data[:, -7][:, None], data[:, -3:]], axis=1)
+                    given_indices = np.where(data[:, -2] < -0.1)[0]
+                    expanded_indices = []
+                    for idx in given_indices:
+                        start = idx * 8
+                        expanded_indices.extend(range(start, start + 8))
+                    given_indices = torch.tensor(expanded_indices).long().to(device)
+                    data = data[data[:, -2] < -0.1]
+                    with open(f"{out_dir}/given_partial_roots.txt", "w") as f:
+                        for root in data:
+                            s, x, y, z = root
+                            x_min = x - s * 0.5
+                            x_max = x + s * 0.5
+                            y_min = y - s * 0.5
+                            y_max = y + s * 0.5
+                            z_min = z - s * 0.5
+                            z_max = z + s * 0.5
+                            f.write(f"{x_min:.4f},{x_max:.4f},{y_min:.4f},{y_max:.4f},{z_min:.4f},{z_max:.4f}\n")
+
                 x0_raw = x0_raw.unsqueeze(dim=0).to(device).float()
                 x0_gt = torch.cat([x0_raw[:, :, -7].unsqueeze(dim=-1), x0_raw[:, :, -3:]], dim=-1).detach().clone()
                 xc = [x0_gt,]
@@ -277,6 +340,13 @@ def main(args):
                 sample_[:, :, -3:] = x0_gt[:, :, -3:]
                 decoded.append(sample_.clone())
                 continue
+
+            if auto_complete2 and l == 1:
+                _, x1_raw, _, _, _ = dataset.get_by_name("chair_000062")
+                x1_raw = x1_raw.unsqueeze(dim=0)
+                x1_gt = x1_raw[:, :, m ** 3:].detach().clone().to(device)
+                x_given = x1_gt[:, given_indices]
+
             if gt_l1 and l == 1:
                 _, x1_raw, _, _, _ = dataset[gt_id]
                 x1_raw = x1_raw.unsqueeze(dim=0)
@@ -314,7 +384,8 @@ def main(args):
                 xc = [xc_ * 2.0 - 1.0 for xc_ in xc]
 
             # Class number
-            y = torch.tensor([args.class_num,] * batch_size).long().to(device)
+            if not text_cond:
+                y = torch.tensor([args.class_num,] * batch_size).long().to(device)
 
             model_kwargs = dict(a=a,
                                 y=y,
@@ -347,7 +418,8 @@ def main(args):
                                                     clip_denoised=args.clip_denoised,
                                                     progress=False,
                                                     device=device,
-                                                    partial_given=x0_given)
+                                                    partial_given=x_given,
+                                                    given_indices=given_indices)
 
             if args.debug and l == 2:
                 import pdb; pdb.set_trace()
@@ -440,7 +512,7 @@ if __name__ == "__main__":
     parser.add_argument("--gt-l1", action="store_true",
                         help="GT l1 inspect")                        
     parser.add_argument("--use-latest", action="store_true") 
-    parser.add_argument("--started-id", type=int, default=0)
+    parser.add_argument("--start-id", type=int, default=0)
 
     # Class conditional newly introduced args
     parser.add_argument("-c", "--class_num", type=int, default=0)
@@ -451,7 +523,11 @@ if __name__ == "__main__":
 
     # Other tasks
     parser.add_argument("--auto-complete", action="store_true")
+    parser.add_argument("--auto-complete2", action="store_true")
     parser.add_argument("--gt-id", type=int, default=None)
+
+    # Text Condition
+    parser.add_argument("--input-text", type=str, default="")
 
     args = parser.parse_args()
     main(args)

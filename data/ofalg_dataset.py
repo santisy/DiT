@@ -2,6 +2,7 @@ import json
 import io
 import math
 import os
+import random
 
 from torch.utils.data import Dataset
 from data_extensions import load_utils
@@ -18,6 +19,7 @@ class OFLAGDataset(Dataset):
                  validate_num=0,
                  validate_flag=False,
                  text_cond=False,
+                 drop_out_rate: float=0.2,
                  **kwargs):
         super().__init__()
 
@@ -29,6 +31,7 @@ class OFLAGDataset(Dataset):
         self._path = data_root
         self._zipfile = None
         self._text_cond = text_cond
+        self._drop_out_rate = drop_out_rate
 
         all_fnames = self._get_zipfile().namelist()
         all_finfo = self._get_zipfile().infolist()
@@ -256,6 +259,8 @@ class OFLAGDataset(Dataset):
             label = self.label_dict[id]
         else:
             label = self._texts[id] # Called label, but a text description
+            if random.random() < self._drop_out_rate:
+                label = ""
 
         return level0_tensor, level1_tensor,  \
                level0_position, level1_position, label
