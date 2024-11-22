@@ -40,6 +40,10 @@ def count_parameters_in_millions(model: nn.Module) -> float:
 def main(args):
     # Make directories
     out_dir = args.export_dir
+    #if args.input_text != "":
+    #TODO: temp
+    text_str = "-".join(args.input_text.strip(".").split(" "))
+    out_dir = os.path.join(out_dir, text_str)
     os.makedirs(out_dir, exist_ok=True)
 
     # Load config
@@ -52,7 +56,7 @@ def main(args):
     # Create dataset. For denormalizing
     dataset = OFLAGDataset(args.data_root,
                            only_infer=True,
-                           text_cond=(args.input_text != ""),
+                           text_cond=True, #TODO: temp
                            **config_list[0].data)
     if args.legacy_plus:
         dataset_legacy = OFLAGDataset("datasets/shapenet_airplane_discreteL1.zip",
@@ -64,6 +68,7 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     debug_flag = args.debug
+    guidance_w = args.guidance_w
     gt_l0 = args.gt_l0
     gt_l1 = args.gt_l1
     auto_complete = args.auto_complete
@@ -228,10 +233,11 @@ def main(args):
 
     # Parse the texts
     y = None
+    y_null = None
     if text_cond:
         tokenizer = T5Tokenizer.from_pretrained('t5-base')
         t5_encoder = T5EncoderModel.from_pretrained('t5-base').to(device)
-        encoded_inputs = tokenizer([args.input_text,],
+        encoded_inputs = tokenizer(["", args.input_text,],
                                    return_tensors='pt',
                                    padding=True,
                                    truncation=True,
@@ -240,6 +246,8 @@ def main(args):
         with torch.no_grad():
             encoder_outputs = t5_encoder(**encoded_inputs)
         y = encoder_outputs.last_hidden_state.detach()
+        y_null = y[0].unsqueeze(dim=0)
+        y = y[1].unsqueeze(dim=0)
 
     # Begin the main sampling loops of different levels
     batch_size = args.sample_batch_size
@@ -392,12 +400,21 @@ def main(args):
                                 x0=xc,
                                 positions=positions)
 
+            model_kwargs_null = dict(a=a,
+                                     y=y_null,
+                                     x0=xc,
+                                     positions=positions)
+
             # Sample
             with autocast():
                 if reg_flag and l == 2:
                     model_kwargs = dict(a=[], y=y, x0=[], positions=[])
                     pre_x1 = xc[-1].reshape(batch_size, 2048, -1)
-                    samples = model(pre_x1, None, **model_kwargs)
+                    if not args.not_use_null_l2 or not text_cond:
+                        samples = model(pre_x1, None, **model_kwargs_null)
+                    else:
+                        samples = model(pre_x1, None, **model_kwargs)
+
                 elif fm_flags[l]:
                     sampler: Sampler = sampler_list[l]
                     sample_fn = sampler.sample_ode(
@@ -415,11 +432,13 @@ def main(args):
                                                     z.shape,
                                                     z,
                                                     model_kwargs=model_kwargs,
+                                                    model_kwargs_null=model_kwargs_null,
                                                     clip_denoised=args.clip_denoised,
                                                     progress=False,
                                                     device=device,
                                                     partial_given=x_given,
-                                                    given_indices=given_indices)
+                                                    given_indices=given_indices,
+                                                    guidance_w=guidance_w)
 
             if args.debug and l == 2:
                 import pdb; pdb.set_trace()
@@ -528,6 +547,8 @@ if __name__ == "__main__":
 
     # Text Condition
     parser.add_argument("--input-text", type=str, default="")
+    parser.add_argument("--guidance-w", type=float, default=0.0)
+    parser.add_argument("--not-use-null-l2", action="store_true")
 
     args = parser.parse_args()
     main(args)

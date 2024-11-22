@@ -338,7 +338,7 @@ class GaussianDiffusion:
         )
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def p_mean_variance(self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None):
+    def p_mean_variance(self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None, model_kwargs_null=None, guidance_w=0.0):
         """
         Apply the model to get p(x_{t-1} | x_t), as well as a prediction of
         the initial x, x_0.
@@ -364,6 +364,9 @@ class GaussianDiffusion:
         B, C = x.shape[:2]
         assert t.shape == (B,)
         model_output = model(x, t, **model_kwargs)
+        if guidance_w > 0.0:
+            model_output_null = model(x, t, **model_kwargs_null)
+            model_output = model_output_null + guidance_w * (model_output - model_output_null)
         if isinstance(model_output, tuple):
             model_output, extra = model_output
         else:
@@ -491,6 +494,8 @@ class GaussianDiffusion:
         denoised_fn=None,
         cond_fn=None,
         model_kwargs=None,
+        model_kwargs_null=None,
+        guidance_w=0.0
     ):
         """
         Sample x_{t-1} from the model at the given timestep.
@@ -515,6 +520,8 @@ class GaussianDiffusion:
             clip_denoised=clip_denoised,
             denoised_fn=denoised_fn,
             model_kwargs=model_kwargs,
+            model_kwargs_null=model_kwargs_null,
+            guidance_w=guidance_w
         )
         noise = th.randn_like(x)
         nonzero_mask = (
@@ -534,9 +541,12 @@ class GaussianDiffusion:
         denoised_fn=None,
         cond_fn=None,
         model_kwargs=None,
+        model_kwargs_null=None,
         device=None,
         progress=False,
-        partial_given=None
+        partial_given=None,
+        given_indices=None,
+        guidance_w=0.0
     ):
         """
         Generate samples from the model.
@@ -555,6 +565,9 @@ class GaussianDiffusion:
                        If not specified, use a model parameter's device.
         :param progress: if True, show a tqdm progress bar.
         :param partial_given: if not None, partially GT is given for autocomplete
+        :param given_indices: if not None, assign the partial given to corresponding
+                        locations.
+        :param guidance_w: if guidance_w for CFG
         :return: a non-differentiable batch of samples.
         """
         final = None
@@ -566,8 +579,11 @@ class GaussianDiffusion:
             denoised_fn=denoised_fn,
             cond_fn=cond_fn,
             model_kwargs=model_kwargs,
+            model_kwargs_null=model_kwargs_null,
             device=device,
             partial_given=partial_given,
+            given_indices=given_indices,
+            guidance_w=guidance_w,
             progress=progress,
         ):
             final = sample
@@ -582,8 +598,11 @@ class GaussianDiffusion:
         denoised_fn=None,
         cond_fn=None,
         model_kwargs=None,
+        model_kwargs_null=None,
         device=None,
         partial_given=None,
+        given_indices=None,
+        guidance_w=0.0,
         progress=False,
     ):
         """
@@ -612,8 +631,11 @@ class GaussianDiffusion:
             t = th.tensor([i] * shape[0], device=device)
 
             if partial_given is not None:
-                p_N = partial_given.size(1)
-                img[:, :p_N] = self.q_sample(partial_given, t)
+                if given_indices is None:
+                    p_N = partial_given.size(1)
+                    img[:, :p_N] = self.q_sample(partial_given, t)
+                else:
+                    img[:, given_indices] = self.q_sample(partial_given, t)
                 img = img.contiguous()
 
             with th.no_grad():
@@ -625,6 +647,8 @@ class GaussianDiffusion:
                     denoised_fn=denoised_fn,
                     cond_fn=cond_fn,
                     model_kwargs=model_kwargs,
+                    model_kwargs_null=model_kwargs_null,
+                    guidance_w=guidance_w
                 )
                 yield out
                 img = out["sample"]
