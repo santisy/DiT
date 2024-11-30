@@ -257,6 +257,10 @@ class OFLAGDataset(Dataset):
         # Dummy label
         if not self._text_cond:
             label = self.label_dict[id]
+            if random.random() < self._drop_out_rate:
+                label = 0
+            else:
+                label = label + 1
         else:
             label = self._texts[id] # Called label, but a text description
             if random.random() < self._drop_out_rate:

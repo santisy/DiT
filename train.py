@@ -32,11 +32,9 @@ import gc
 from models import DiT
 from bpregen_model import PlainModel
 
-from diffusion import create_diffusion
-from transport import create_transport
 from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import GradScaler, autocast
-from modules.edm import EDMPrecond, EDMLoss
+from flow_matching.ot_module import OT
 
 from transformers import T5Tokenizer, T5EncoderModel
 from data.ofalg_dataset import OFLAGDataset
@@ -92,17 +90,6 @@ def create_logger(logging_dir):
         logger = logging.getLogger(__name__)
         logger.addHandler(logging.NullHandler())
     return logger
-
-def noise_conditioning(x_list, a_list, sampler, fm_flag=False):
-    x_out = []
-    for x, a in zip(x_list, a_list):
-        if not fm_flag:
-            x_out.append(sampler.q_sample(x, a))
-        else:
-            _, x0, x = sampler.sample(x)
-            t = 1 - a.float() / 1000.0
-            x_out.append(sampler.path_sampler.plan(t, x0, x))
-    return x_out
 
 # Parameters for the learning rate schedule
 warmup_steps = 5000      # Number of steps to warm up
@@ -211,7 +198,6 @@ def main(args):
                            **config.data)
     in_ch = dataset.get_level_vec_len(1)
     m = int(math.floor(math.pow(in_ch, 1 / 3.0)))
-    n_timesteps = config.diffusion.diffusion_steps
 
     # Arch variables
     num_heads = config.model.num_heads
@@ -222,18 +208,13 @@ def main(args):
     sibling_num = config.model.get("sibling_num", 2)
     if isinstance(sibling_num, (list, tuple)):
         sibling_num = sibling_num[level_num]
-    learn_sigma = config.diffusion.get("learn_sigma", True)
 
     # Other training variantions
-    edm_flag = config.model.get("use_EDM", False)
     ag_flag = config.model.get("ag_flag", False)
-    fm_flag = config.model.get("fm_flag", False) # Flow matching flag
     noa_flag = config.model.get("noa_flag", False)
     rescale_flag = config.model.get("rescale_flag", False)
-    low_a_flag = config.model.get("low_a_flag", False)
     real_noa = config.model.get("real_noa", False)
     selftt = config.model.get("selftt", False)
-    max_a = config.model.get("max_a", 50)
     mlp_ratio = config.model.get("mlp_ratio")
     reg_flag = (config.model.get("reg_flag", False) and level_num == 2)
     uncond_flag = (config.model.get("uncond_flag", False) and level_num == 1)
@@ -263,17 +244,10 @@ def main(args):
     else:
         model_class = DiT
 
-    # Determine the noise conditional level
-    if not low_a_flag:
-        max_a = n_timesteps // 10
-    else:
-        max_a = max_a
-
     # If reg change the previous arguments
     if reg_flag:
         out_ch = in_ch
         in_ch = int(dataset.get_level_vec_len(1) - m ** 3)
-        learn_sigma = False
     else:
         out_ch = None
 
@@ -292,14 +266,14 @@ def main(args):
         depth=depth,
         num_heads=num_heads,
         cross_layers=config.model.cross_layers if level_num != 0 else [],
-        learn_sigma=learn_sigma,
+        learn_sigma=False,
         # Other flags
         add_inject=config.model.add_inject,
         aligned_gen=config.model.get("align_gen", [False, True, True])[level_num],
         pos_embedding_version=config.model.get("pos_emedding_version", "v1"),
         level_num=level_num,
         sibling_num=sibling_num,
-        flow_flag=fm_flag,
+        flow_flag=False,
         no_a_embed=noa_flag,
         rescale_flag=rescale_flag,
         real_noa=real_noa,
@@ -311,15 +285,8 @@ def main(args):
         selftt=selftt
     ).to(device)
 
-    # Create diffusion related loss module or not?
-    if fm_flag:
-        transport = create_transport("Linear", "velocity", None, None, None, snr_type="lognorm")
-    elif edm_flag:
-        print("\033[92mUse EDM.\033[00m")
-        model = EDMPrecond(model, n_latents=dataset.octree_root_num * 8 ** 2, channels=in_ch)
-        edm_loss = EDMLoss()
-    else:
-        diffusion = create_diffusion(timestep_respacing="", **config.diffusion)
+    # OT-CFM
+    ot = OT()
 
     # Create text tokenizers and text encoder if cond on texts
     if text_cond:
@@ -422,7 +389,6 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
-                a = [torch.randint(0, max_a, (x.shape[0],), device=device),]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
@@ -431,38 +397,22 @@ def main(args):
                     x1 = x1.reshape(B, L // sibling_num, -1)
                 if not noa_flag:
                     xc = [x0, x1]
-                    a = [torch.randint(0, max_a, (x.shape[0],), device=device),
-                        torch.randint(0, max_a, (x.shape[0],), device=device)
-                        ]
                 else:
                     xc = [x1,]
-                    a = [torch.randint(0, max_a, (x.shape[0],), device=device),]
                 positions = [None, None]
 
             # Noise augmentation
-            model_kwargs = dict(a=a, y=y, x0=xc, positions=positions)
+            model_kwargs = dict(a=None, y=y, xc=xc, positions=positions)
             if reg_flag:
                 model_kwargs = dict(a=[], y=y, x0=[], positions=[])
                 #x1 = noise_conditioning([x1,], a, diffusion)[0]
                 with autocast(enabled=not args.no_mixed_pr):
                     out = model(x1, None, **model_kwargs)
                 loss = F.l1_loss(out, x2)
-            elif fm_flag:
-                xc = noise_conditioning(xc, a, transport, fm_flag=True)
-                with autocast(enabled=not args.no_mixed_pr):
-                    loss_dict = transport.training_losses(model, x, model_kwargs)
-                loss = loss_dict["loss"].mean()
-            elif edm_flag:
-                loss = edm_loss(model, x, model_kwargs=model_kwargs)
             else:
-                xc = noise_conditioning(xc, a, diffusion)
                 if rescale_flag:
                     xc = [xc_.clip_(-1.0, 1.0).detach() for xc_ in xc]    
-                t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-                with autocast(enabled=not args.no_mixed_pr):
-                    loss_dict = diffusion.training_losses(model, x, t,
-                                                          model_kwargs=model_kwargs)
-                loss = loss_dict["loss"].mean()
+                loss = ot(model, x, model_kwargs)
 
             # Gradient step and more
             opt.zero_grad()

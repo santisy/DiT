@@ -106,7 +106,8 @@ class PlainModel(nn.Module):
         if num_classes is not None:
             y_embed_dim = 256
             self.class_cond_flag = True
-            self.class_embedding = nn.Embedding(num_classes, y_embed_dim)
+            # num_classes + 1 is for the null label
+            self.class_embedding = nn.Embedding(num_classes + 1, y_embed_dim)
             nn.init.normal_(self.class_embedding.weight, std=0.02)
             self.y_embed = nn.Sequential(
                 nn.Linear(y_embed_dim, self.embed_dim),
@@ -193,7 +194,7 @@ class PlainModel(nn.Module):
         return
 
        
-    def forward(self, x, timesteps, y=None, a=[], x0=[], **kwargs):
+    def forward(self, x, timesteps, y=None, a=[], xc=[], **kwargs):
 
         B, L, C = x.shape
         if self.sibling_num > 1:
@@ -206,7 +207,7 @@ class PlainModel(nn.Module):
         if len(self.condition_node_dim) > 0 and not self.reg_flag and not self.uncond_flag:
             # Noise augmentation level `a`, and previous condition embedding `c`
             for a_, xc_, a_embed, c_embed in zip(
-                a, x0, self.a_embed_list, self.c_embed_list):
+                a, xc, self.a_embed_list, self.c_embed_list):
                 if not self.real_noa:
                     a_embeded = a_embed(sincos_embedding(a_, self.embed_dim)).unsqueeze(1)
                     other_embed_accumulate = other_embed_accumulate + a_embeded
