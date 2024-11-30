@@ -234,10 +234,10 @@ class PlainModel(nn.Module):
             y_embeds = 0
 
         # t (timestep) embed
-        if self.flow_flag:
-            timesteps = (timesteps * 1000).floor().to(torch.int64)
         if not self.reg_flag:
-            time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
+            time_embeds = self.time_embed(sincos_embedding(timesteps * 1000,
+                                                           self.embed_dim)
+                                          ).unsqueeze(1)  
         else:
             time_embeds = 0
 
