@@ -4,9 +4,9 @@ import torch.distributed as dist
 import numpy as np
 from torchcfm.conditional_flow_matching import ExactOptimalTransportConditionalFlowMatcher
 
-from ot_utils import sample_plan
-from ot_utils import sample_map
-from ot_utils import get_map
+from flow_matching.ot_utils import sample_plan
+from flow_matching.ot_utils import sample_map
+from flow_matching.ot_utils import get_map
 
 
 class OT:
@@ -104,8 +104,8 @@ class OT:
 
         t, xt, ut = super(ExactOptimalTransportConditionalFlowMatcher, self.FM
                           ).sample_location_and_conditional_flow(x0, x1)
-        vt = model(xt, t, **model_kwargs)
-        loss = torch.mean((vt - ut) **2)
+        vt = model(xt.detach(), t, **model_kwargs)
+        loss = torch.mean((vt - ut.detach()) **2)
 
         return loss
 
