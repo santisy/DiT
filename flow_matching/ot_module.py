@@ -102,7 +102,8 @@ class OT:
         # OT noise conditioning
         model_kwargs["xc"] = self._noise_conditioning(model_kwargs["xc"])
 
-        t, xt, ut = self.FM.sample_location_and_conditional_flow(x0, x1)
+        t, xt, ut = super(ExactOptimalTransportConditionalFlowMatcher, self.FM
+                          ).sample_location_and_conditional_flow(x0, x1)
         vt = model(xt, t, **model_kwargs)
         loss = torch.mean((vt - ut) **2)
 
