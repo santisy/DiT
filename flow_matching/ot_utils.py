@@ -181,7 +181,7 @@ def sample_plan(x0, x1, conditions, replace=True):
     # Reorder conditions associated with x1
     conditions_sampled = {}
     for key, value in conditions.items():
-        if value is not None:
+        if isinstance(conditions, torch.Tensor):
             # Assume value is a Tensor or array with shape matching x1_all
             # We need to gather conditions from all processes if distributed
             if dist.is_available() and dist.is_initialized():
