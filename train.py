@@ -402,7 +402,7 @@ def main(args):
                 positions = [None, None]
 
             # Noise augmentation
-            model_kwargs = dict(a=None, y=y, xc=xc, positions=positions)
+            model_kwargs = dict(a=[], y=y, xc=xc, positions=positions)
             if reg_flag:
                 model_kwargs = dict(a=[], y=y, x0=[], positions=[])
                 #x1 = noise_conditioning([x1,], a, diffusion)[0]

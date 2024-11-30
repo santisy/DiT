@@ -100,7 +100,7 @@ class OT:
         x0, x1, model_kwargs = sample_plan(x0, x1, model_kwargs)
 
         # OT noise conditioning
-        model_kwargs["xc"] = self._noise_conditioning(model_kwargs["xc"])
+        model_kwargs["xc"] = [self._noise_conditioning(xc) for xc in model_kwargs["xc"]]
 
         t, xt, ut = super(ExactOptimalTransportConditionalFlowMatcher, self.FM
                           ).sample_location_and_conditional_flow(x0, x1)

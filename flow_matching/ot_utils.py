@@ -181,21 +181,25 @@ def sample_plan(x0, x1, conditions, replace=True):
     # Reorder conditions associated with x1
     conditions_sampled = {}
     for key, value in conditions.items():
-        if isinstance(conditions, torch.Tensor):
-            # Assume value is a Tensor or array with shape matching x1_all
-            # We need to gather conditions from all processes if distributed
-            if dist.is_available() and dist.is_initialized():
-                # Gather conditions from all processes
-                value_list = [torch.zeros_like(value) for _ in range(dist.get_world_size())]
-                dist.all_gather(value_list, value)
-                value_all = torch.cat(value_list, dim=0)
-            else:
-                value_all = value
+        new_list = []
+        for v in value:
+            if v is not None:
+                # Assume value is a Tensor or array with shape matching x1_all
+                # We need to gather conditions from all processes if distributed
+                if dist.is_available() and dist.is_initialized():
+                    # Gather conditions from all processes
+                    v_list = [torch.zeros_like(v) for _ in range(dist.get_world_size())]
+                    dist.all_gather(v_list, v)
+                    v_all = torch.cat(v_list, dim=0)
+                else:
+                    v_all = v
 
-            # Reorder the condition values according to i_t
-            conditions_sampled[key] = value_all[i_t_local]
-        else:
-            conditions_sampled[key] = None
+                # Reorder the condition values according to i_t
+                new_list.append(v_all[i_t_local])
+            else:
+                new_list.append(None)
+
+        conditions_sampled[key] = new_list
 
 
     return x0_sampled, x1_sampled, conditions_sampled
@@ -205,11 +209,11 @@ def sample_plan(x0, x1, conditions, replace=True):
 if __name__ == "__main__":
     x0 = torch.randn(4, 256, 4).cuda()
     x1 = torch.randn(4, 256, 4).cuda()
-    conditions = {"a": torch.randn(4).cuda(),
-                  "y": torch.randn(4, 256, 4).cuda(),
-                  "labels": torch.randn(4, 128).cuda()} 
+    conditions = {"a": [torch.randn(4).cuda(),],
+                  "y": [torch.randn(4, 256, 4).cuda(), torch.randn(4, 256, 10).cuda()],
+                  "labels": [None,]} 
     x0_sampled, x1_sampled, conditions_sampled = sample_plan(x0, x1, conditions)
     print("Checking")
     print(x0_sampled.shape) 
     print(x1_sampled.shape)
-    print(conditions_sampled["a"].shape)
+    print(conditions_sampled["a"][0].shape)
