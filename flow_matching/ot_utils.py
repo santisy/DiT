@@ -182,8 +182,11 @@ def sample_plan(x0, x1, conditions, replace=True):
     conditions_sampled = {}
     for key, value in conditions.items():
         new_list = []
+        list_flag = isinstance(value, list)
+        if not list_flag:
+            value = [value,]
         for v in value:
-            if v is not None:
+            if v is not None and isinstance(v, torch.Tensor):
                 # Assume value is a Tensor or array with shape matching x1_all
                 # We need to gather conditions from all processes if distributed
                 if dist.is_available() and dist.is_initialized():
@@ -197,10 +200,12 @@ def sample_plan(x0, x1, conditions, replace=True):
                 # Reorder the condition values according to i_t
                 new_list.append(v_all[i_t_local])
             else:
-                new_list.append(None)
+                new_list.append(v)
 
-        conditions_sampled[key] = new_list
-
+        if list_flag:
+            conditions_sampled[key] = new_list
+        else:
+            conditions_sampled[key] = new_list[0]
 
     return x0_sampled, x1_sampled, conditions_sampled
 
