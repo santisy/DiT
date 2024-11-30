@@ -4,9 +4,9 @@ import torch.distributed as dist
 import numpy as np
 from torchcfm.conditional_flow_matching import ExactOptimalTransportConditionalFlowMatcher
 
-from ot_utils import sample_plan
-from ot_utils import sample_map
-from ot_utils import get_map
+from flow_matching.ot_utils import sample_plan
+from flow_matching.ot_utils import sample_map
+from flow_matching.ot_utils import get_map
 
 
 class OT:
