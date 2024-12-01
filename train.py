@@ -390,6 +390,7 @@ def main(args):
             if level_num == 1:
                 x = x1
                 xc = [x0,]
+                a = [None,]
                 positions = [None,]
             elif level_num == 2:
                 x = x2
@@ -400,10 +401,11 @@ def main(args):
                     xc = [x0, x1]
                 else:
                     xc = [x1,]
+                a = [None, None]
                 positions = [None, None]
 
             # Noise augmentation
-            model_kwargs = dict(a=[], y=y, xc=xc, positions=positions)
+            model_kwargs = dict(a=a, y=y, xc=xc, positions=positions)
             if reg_flag:
                 model_kwargs = dict(a=[], y=y, x0=[], positions=[])
                 #x1 = noise_conditioning([x1,], a, diffusion)[0]
