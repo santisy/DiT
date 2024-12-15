@@ -18,8 +18,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 import numpy as np
 
-from diffusion import create_diffusion
-from diffusion.respace import SpacedDiffusion
+import torchdiffeq
 from transformers import T5Tokenizer, T5EncoderModel
 from ruamel.yaml import YAML
 from easydict import EasyDict as edict
@@ -40,10 +39,12 @@ def count_parameters_in_millions(model: nn.Module) -> float:
 def main(args):
     # Make directories
     out_dir = args.export_dir
-    #if args.input_text != "":
-    #TODO: temp
     text_str = "-".join(args.input_text.strip(".").split(" "))
-    out_dir = os.path.join(out_dir, text_str)
+    guidance_w = args.guidance_w
+    if text_str != "":
+        out_dir = os.path.join(out_dir, text_str)
+    if guidance_w != 0:
+        out_dir = out_dir + f"_guideW{guidance_w:.1f}"
     os.makedirs(out_dir, exist_ok=True)
 
     # Load config
@@ -56,7 +57,7 @@ def main(args):
     # Create dataset. For denormalizing
     dataset = OFLAGDataset(args.data_root,
                            only_infer=True,
-                           text_cond=True, #TODO: temp
+                           text_cond=text_str != "",
                            **config_list[0].data)
     if args.legacy_plus:
         dataset_legacy = OFLAGDataset("datasets/shapenet_airplane_discreteL1.zip",
@@ -68,7 +69,6 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     debug_flag = args.debug
-    guidance_w = args.guidance_w
     gt_l0 = args.gt_l0
     gt_l1 = args.gt_l1
     auto_complete = args.auto_complete
@@ -81,7 +81,6 @@ def main(args):
     # Model
     model_list = []
     in_ch_list = []
-    sampler_list = []
     fm_flags = []
     ag_flags = []
     noa_flags = []
@@ -108,7 +107,7 @@ def main(args):
 
         sibling_total = config.model.get("sibling_num", 2)
         depth_total = config.model.depth
-        learn_sigma = config.diffusion.get("learn_sigma", True)
+        learn_sigma = False
         num_heads = config.model.num_heads
         reg_flag = (config.model.get("reg_flag", False) and l == 2)
         uncond_flag = (config.model.get("uncond_flag", False) and l == 1)
@@ -212,21 +211,6 @@ def main(args):
         model.to(device)
         model.eval()  # important!
         model_list.append(model)
-
-        # Create samplers
-        if reg_flag:
-            sampler = None
-        elif fm_flag:
-            transport = create_transport("Linear",
-                                         "velocity",
-                                         "velocity",
-                                         train_eps=0.2,
-                                         sample_eps=0.1)
-            sampler = Sampler(transport)
-        else:
-            sampler = create_diffusion(timestep_respacing="", **config.diffusion)
-        sampler_list.append(sampler)
-
 
         if args.only_l0:
             break
@@ -393,7 +377,8 @@ def main(args):
 
             # Class number
             if not text_cond:
-                y = torch.tensor([args.class_num,] * batch_size).long().to(device)
+                y = torch.tensor([args.class_num + 1,] * batch_size).long().to(device)
+                y_null = torch.tensor([0,] * batch_size).long().to(device)
 
             model_kwargs = dict(a=a,
                                 y=y,
@@ -415,30 +400,18 @@ def main(args):
                     else:
                         samples = model(pre_x1, None, **model_kwargs)
 
-                elif fm_flags[l]:
-                    sampler: Sampler = sampler_list[l]
-                    sample_fn = sampler.sample_ode(
-                                sampling_method="euler",
-                                num_steps=60,
-                                atol=1e-6,
-                                rtol=1e-3,
-                                reverse=False,
-                                time_shifting_factor=4,
-                    )
-                    samples = sample_fn(z, model_list[l].forward, **model_kwargs)[-1]
                 else:
-                    sampler: SpacedDiffusion = sampler_list[l]
-                    samples = sampler.p_sample_loop(model_list[l].forward,
-                                                    z.shape,
-                                                    z,
-                                                    model_kwargs=model_kwargs,
-                                                    model_kwargs_null=model_kwargs_null,
-                                                    clip_denoised=args.clip_denoised,
-                                                    progress=False,
-                                                    device=device,
-                                                    partial_given=x_given,
-                                                    given_indices=given_indices,
-                                                    guidance_w=guidance_w)
+                    def infer_fn(t, x):
+                        t = t.unsqueeze(dim=0).repeat(x.shape[0])
+                        return ((1 - guidance_w) * model_list[l].forward(x, t, **model_kwargs_null) 
+                                    + guidance_w * model_list[l].forward(x, t, **model_kwargs))
+                    samples = torchdiffeq.odeint(
+                        infer_fn,
+                        z,
+                        torch.linspace(0, 1, 2, device=device),
+                        atol=1e-4,
+                        rtol=1e-4,
+                        method="dopri5")[-1]
 
             if args.debug and l == 2:
                 import pdb; pdb.set_trace()
@@ -549,6 +522,9 @@ if __name__ == "__main__":
     parser.add_argument("--input-text", type=str, default="")
     parser.add_argument("--guidance-w", type=float, default=0.0)
     parser.add_argument("--not-use-null-l2", action="store_true")
+
+    # OT related
+    parser.add_argument("--infer-n", type=int, default=100)
 
     args = parser.parse_args()
     main(args)
